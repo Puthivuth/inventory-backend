@@ -58,10 +58,13 @@ coverage.xml
 # Django stuff:
 *.log
 db.sqlite3
+db.sqlite3-journal
 /staticfiles/
+/media/
 
 # Environments
 .env
+.env.local
 .venv
 env/
 venv/
@@ -72,3 +75,7 @@ venv.bak/
 # IDEs
 .idea/
 .vscode/
+
+# OS specific
+.DS_Store
+Thumbs.db
