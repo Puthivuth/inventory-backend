@@ -63,7 +63,7 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'Inventory'),
+        'NAME': os.environ.get('DB_NAME', 'InventoryV2'),
         'USER': os.environ.get('DB_USER', 'postgres'),
         'PASSWORD': os.environ.get('DB_PASSWORD', 'vuth123321'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
