@@ -16,20 +16,19 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: vuth123321
-          POSTGRES_DB: InventoryV2
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: testdb
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d InventoryV2"
+          --health-cmd "pg_isready -U testuser -d testdb"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
     env:
-      DATABASE_URL: postgres://postgres:vuth123321@localhost:5432/InventoryV2
-
+      DATABASE_URL: postgres://testuser:testpassword@localhost:5432/testdb
 
     steps:
       - uses: actions/checkout@v3
@@ -43,14 +42,6 @@ jobs:
           pip install -r requirements.txt
 
       - run: python manage.py migrate
-
-      - name: Create Django superuser
-        run: |
-          python manage.py shell -c "from django.contrib.auth import get_user_model; \
-          User = get_user_model(); \
-          User.objects.filter(username='admin').exists() or \
-          User.objects.create_superuser('admin', 'admin@example.com', 'admin123')"
-
       - run: python manage.py test
 
   docker:
