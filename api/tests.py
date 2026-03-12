@@ -17,7 +17,7 @@ class InventoryUpdateTest(TestCase):
         # Create a category
         self.category = Category.objects.create(
             name='Electronics',
-            description='Electronic devices'
+            # description='Electronic devices'
         )
 
         # Create a subcategory
