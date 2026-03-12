@@ -9,6 +9,5 @@ djangorestframework==3.16.0
 djangorestframework-simplejwt==5.5.0
 requests==2.32.5
 pillow==11.2.1
-reportlab==4.4.2
-django-grappelli==2.17.0
+reportlab==4.4.2cls
 bakong-khqr==0.1.0
