@@ -72,7 +72,7 @@ class InventoryUpdateTest(TestCase):
             tax=Decimal('0.00'),
             grandTotal=Decimal('1000.00'),
             paymentMethod='Cash',
-            invoiceDate=datetime.now(),
+            # invoiceDate=datetime.now(),
             status='Draft'
         )
 
