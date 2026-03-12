@@ -24,7 +24,7 @@ class InventoryUpdateTest(TestCase):
         self.subcategory = SubCategory.objects.create(
             category=self.category,
             name='Phones',
-            description='Mobile phones'
+            # description='Mobile phones'
         )
 
         # Create a source
