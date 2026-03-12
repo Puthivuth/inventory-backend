@@ -10,7 +10,8 @@ class InventoryUpdateTest(TestCase):
         self.user = User.objects.create_user(
             username='testuser',
             email='test@example.com',
-            password='test123'
+            password='testpass123',
+            role='administrator'
         )
 
 
@@ -48,7 +49,7 @@ class InventoryUpdateTest(TestCase):
         self.inventory = Inventory.objects.create(
             product=self.product,
             quantity=self.initial_quantity,
-            costPrice=Decimal('500.00'),
+            # costPrice=Decimal('500.00'),
             reorderLevel=20,
             location='Warehouse A'
         )
