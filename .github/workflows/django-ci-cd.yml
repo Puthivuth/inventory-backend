@@ -71,7 +71,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Show Docker username
+      - name: Show Docker user
         run: echo "DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}"
 
       - name: Log in to Docker Hub
