@@ -7,24 +7,25 @@ class InventoryUpdateTest(TestCase):
 
     def setUp(self):
         # Create a user
-        self.user = User.objects.create(
-            name='Test User',
+        self.user = User.objects.create_user(
+            username='testuser',
             email='test@example.com',
-            passwordHash='hashedpassword',
-            role='Admin'
+            password='testpass123',
+            role='administrator'
         )
+
 
         # Create a category
         self.category = Category.objects.create(
             name='Electronics',
-            description='Electronic devices'
+            # description='Electronic devices'
         )
 
         # Create a subcategory
         self.subcategory = SubCategory.objects.create(
             category=self.category,
             name='Phones',
-            description='Mobile phones'
+            # description='Mobile phones'
         )
 
         # Create a source
@@ -48,7 +49,7 @@ class InventoryUpdateTest(TestCase):
         self.inventory = Inventory.objects.create(
             product=self.product,
             quantity=self.initial_quantity,
-            costPrice=Decimal('500.00'),
+            # costPrice=Decimal('500.00'),
             reorderLevel=20,
             location='Warehouse A'
         )
@@ -71,7 +72,7 @@ class InventoryUpdateTest(TestCase):
             tax=Decimal('0.00'),
             grandTotal=Decimal('1000.00'),
             paymentMethod='Cash',
-            invoiceDate=datetime.now(),
+            # invoiceDate=datetime.now(),
             status='Draft'
         )
 
