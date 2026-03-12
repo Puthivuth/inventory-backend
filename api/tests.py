@@ -7,12 +7,12 @@ class InventoryUpdateTest(TestCase):
 
     def setUp(self):
         # Create a user
-        self.user = User.objects.create(
-            name='Test User',
+        self.user = User.objects.create_user(
+            username='testuser',
             email='test@example.com',
-            passwordHash='hashedpassword',
-            role='Admin'
+            password='test123'
         )
+
 
         # Create a category
         self.category = Category.objects.create(
