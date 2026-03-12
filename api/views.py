@@ -70,7 +70,7 @@ def upload_image(request):
     
     if file_extension not in allowed_extensions:
         return Response({
-            'error': f'Invalid file type. Allowed types: {', '.join(allowed_extensions)}'
+            'error': f'''Invalid file type. Allowed types: {', '.join(allowed_extensions)}'''
         }, status=400)
     
     # Validate file size (max 5MB)
