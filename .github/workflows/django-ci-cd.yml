@@ -16,19 +16,19 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: testdb
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: vuth123321
+          POSTGRES_DB: InventoryV2
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U testuser -d testdb"
+          --health-cmd "pg_isready -U postgres -d InventoryV2"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
     env:
-      DATABASE_URL: postgres://testuser:testpassword@localhost:5432/testdb
+      DATABASE_URL: postgres://postgres:vuth123321@localhost:5432/InventoryV2
 
     steps:
       - uses: actions/checkout@v3
