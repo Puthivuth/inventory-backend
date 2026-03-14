@@ -10,7 +10,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-z(!23$5v6=s&71+ty_em-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', 'vuthserver.tailf87741.ts.net', '100.94.77.119']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'vuthserver.tailf87741.ts.net', '100.94.77.119']
 
 # To allow all
 # CORS_ALLOW_ALL_ORIGINS = True
@@ -62,8 +62,3 @@ EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 SECURE_SSL_REDIRECT = False
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
-
-
-# SECURE_SSL_REDIRECT = True
-# SESSION_COOKIE_SECURE = True
-# CSRF_COOKIE_SECURE = True

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from decimal import Decimal
+from django.db.models import Min
 from .models import (
     User,
     UserProfile,
@@ -112,6 +113,20 @@ class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = ['customerId', 'name', 'businessAddress', 'phone', 'email', 'customerType', 'firstPurchaseDate', 'createdAt']
+    
+    def to_representation(self, instance):
+        """Override to automatically populate firstPurchaseDate from earliest invoice"""
+        representation = super().to_representation(instance)
+        
+        # If firstPurchaseDate is not set, query the earliest invoice date
+        if not representation.get('firstPurchaseDate'):
+            earliest_invoice = instance.invoices.aggregate(
+                earliest_date=Min('createdAt')
+            )
+            if earliest_invoice['earliest_date']:
+                representation['firstPurchaseDate'] = earliest_invoice['earliest_date']
+        
+        return representation
 
 class PurchaseNestedSerializer(serializers.ModelSerializer):
     class Meta:

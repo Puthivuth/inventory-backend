@@ -66,7 +66,7 @@ class Source(models.Model):
 STATUS_CHOICES = [
     ('Active', 'Active'),
     ('Inactive', 'Inactive'),
-    ('Discontinued', 'Discontinued'),
+    ('Discount', 'Discount'),
 ]
 
 class Product(models.Model):
