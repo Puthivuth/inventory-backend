@@ -25,4 +25,10 @@ urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
     path('', include(router.urls)),
     path('upload/', views.upload_image, name='upload_image'),
+    # Image Search Endpoints
+    path('image-search/health/', views.image_search_health, name='image_search_health'),
+    path('search-products/', views.search_products_by_image, name='search_products_by_image'),
+    path('search-products-url/', views.search_products_by_url, name='search_products_by_url'),
+    path('products/<int:product_id>/index-image/', views.index_product_image, name='index_product_image'),
+    path('batch-index-products/', views.batch_index_products, name='batch_index_products'),
 ]

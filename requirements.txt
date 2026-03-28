@@ -12,3 +12,13 @@ pillow==11.2.1
 reportlab==4.4.2
 django-grappelli==3.0.10
 bakong-khqr==0.1.0
+
+# Image Search Dependencies
+opencv-python==4.9.0.80
+numpy==1.26.3
+torch==2.1.2
+torchvision==0.16.2
+ultralytics==8.1.0
+sentence-transformers==2.3.1
+qdrant-client==1.7.3
+pydantic==2.5.3

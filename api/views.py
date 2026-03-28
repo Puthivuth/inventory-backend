@@ -526,3 +526,280 @@ class ActivityLogViewSet(viewsets.ModelViewSet):
     queryset = ActivityLog.objects.all()
     serializer_class = ActivityLogSerializer
     permission_classes = [IsAuthenticated, IsAdminOrManager] # Only Managers/Admins should view activity logs
+
+
+# Image Search Endpoints
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def image_search_health(request):
+    """Check image search service health"""
+    try:
+        from .image_search import get_service
+        service = get_service()
+        info = service.get_collection_info()
+        health = {
+            'status': 'healthy' if info else 'unhealthy',
+            'collection': info or {}
+        }
+        return Response(health, status=status.HTTP_200_OK if health.get('status') == 'healthy' else status.HTTP_503_SERVICE_UNAVAILABLE)
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return Response(
+            {'status': 'unhealthy', 'error': str(e)},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def search_products_by_image(request):
+    """Search for similar products by uploading an image
+    
+    POST /api/search-products/
+    
+    Parameters:
+    - file: Image file (multipart/form-data)
+    - top_k: Number of results (optional, default 10)
+    - score_threshold: Minimum similarity score (optional, default 0.5)
+    """
+    try:
+        import cv2
+        import numpy as np
+        from .image_search import get_service
+        
+        # Get parameters
+        file_obj = request.FILES.get('file')
+        top_k = int(request.data.get('top_k', 10))
+        score_threshold = float(request.data.get('score_threshold', 0.5))
+        
+        # Validate file
+        if not file_obj:
+            return Response(
+                {'error': 'No image file provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Load image from file
+        file_content = file_obj.read()
+        image_array = np.frombuffer(file_content, dtype=np.uint8)
+        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            return Response(
+                {'error': 'Failed to decode image'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Search
+        service = get_service()
+        results = service.search_similar_products(image, top_k=top_k, score_threshold=score_threshold)
+        
+        # Enrich results with product details from database
+        enriched_results = []
+        for result in results:
+            try:
+                product = Product.objects.get(productId=result['product_id'])
+                enriched_results.append({
+                    'product_id': product.productId,
+                    'product_name': product.productName,
+                    'sku_code': product.skuCode,
+                    'image_url': product.image,
+                    'similarity_score': result.get('similarity_score', 0),
+                    'description': product.description,
+                    'sale_price': float(product.salePrice),
+                    'cost_price': float(product.costPrice),
+                })
+            except Product.DoesNotExist:
+                # Include result even if product details not found
+                enriched_results.append(result)
+        
+        return Response({
+            'success': True,
+            'count': len(enriched_results),
+            'results': enriched_results
+        })
+        
+    except Exception as e:
+        logger.error(f"Image search failed: {str(e)}")
+        return Response(
+            {'error': f'Search failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def search_products_by_url(request):
+    """Search for similar products using an image URL
+    
+    GET /api/search-products-url/?image_url=<url>&top_k=10&score_threshold=0.5
+    """
+    try:
+        import cv2
+        import numpy as np
+        from .image_search import get_service
+        
+        # Get parameters
+        image_url = request.query_params.get('image_url')
+        top_k = int(request.query_params.get('top_k', 10))
+        score_threshold = float(request.query_params.get('score_threshold', 0.5))
+        
+        if not image_url:
+            return Response(
+                {'error': 'image_url parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Load image from URL
+        service = get_service()
+        image = service.load_image_from_url(image_url)
+        
+        if image is None:
+            return Response(
+                {'error': f'Failed to load image from URL: {image_url}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Search
+        results = service.search_similar_products(image, top_k=top_k, score_threshold=score_threshold)
+        
+        # Enrich results with product details
+        enriched_results = []
+        for result in results:
+            try:
+                product = Product.objects.get(productId=result['product_id'])
+                enriched_results.append({
+                    'product_id': product.productId,
+                    'product_name': product.productName,
+                    'sku_code': product.skuCode,
+                    'image_url': product.image,
+                    'similarity_score': result.get('similarity_score', 0),
+                    'description': product.description,
+                    'sale_price': float(product.salePrice),
+                    'cost_price': float(product.costPrice),
+                })
+            except Product.DoesNotExist:
+                enriched_results.append(result)
+        
+        return Response({
+            'success': True,
+            'count': len(enriched_results),
+            'results': enriched_results
+        })
+        
+    except Exception as e:
+        logger.error(f"Image search by URL failed: {str(e)}")
+        return Response(
+            {'error': f'Search failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsManagerOrReadOnly])
+def index_product_image(request, product_id):
+    """Index a product image for search
+    
+    POST /api/products/{product_id}/index-image/
+    
+    Body:
+    - image_url: URL to product image (optional, will use product.image if not provided)
+    """
+    try:
+        from .image_search import get_service
+        
+        # Get product
+        product = Product.objects.get(productId=product_id)
+        
+        # Get image URL
+        image_url = request.data.get('image_url') or product.image
+        
+        if not image_url:
+            return Response(
+                {'error': 'No image URL provided and product has no image'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Index product
+        service = get_service()
+        metadata = {
+            'product_name': product.productName,
+            'sku_code': product.skuCode,
+            'description': product.description,
+        }
+        
+        result = service.index_product_image(product_id, image_url, metadata=metadata)
+        
+        return Response({
+            'success': result.get('success', False),
+            'message': 'Product image indexed successfully',
+            'details': result
+        })
+        
+    except Product.DoesNotExist:
+        return Response(
+            {'error': 'Product not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Failed to index product image: {str(e)}")
+        return Response(
+            {'error': f'Indexing failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def batch_index_products(request):
+    """Batch index all products with images
+    
+    POST /api/batch-index-products/
+    """
+    try:
+        from .image_search import get_service
+        
+        # Get all products with images
+        products = Product.objects.filter(image__isnull=False).exclude(image='')
+        
+        batch_data = []
+        for product in products:
+            batch_data.append({
+                'product_id': product.productId,
+                'image_source': product.image,
+                'metadata': {
+                    'product_name': product.productName,
+                    'sku_code': product.skuCode,
+                    'description': product.description,
+                }
+            })
+        
+        if not batch_data:
+            return Response({
+                'success': True,
+                'message': 'No products with images to index',
+                'total': 0,
+                'successful': 0,
+                'failed': 0
+            })
+        
+        # Index all products
+        service = get_service()
+        result = service.batch_index_products(batch_data)
+        
+        return Response({
+            'success': True,
+            'message': 'Batch indexing completed',
+            'total': len(batch_data),
+            'successful': result.get('successful', 0),
+            'failed': result.get('failed', 0),
+            'details': result
+        })
+        
+    except Exception as e:
+        logger.error(f"Batch indexing failed: {str(e)}")
+        return Response(
+            {'error': f'Batch indexing failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
