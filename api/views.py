@@ -33,7 +33,8 @@ from .models import (
     Invoice,
     Purchase,
     Transaction,
-    ActivityLog
+    ActivityLog,
+    ProductAssociation
 )
 from .serializers import (
     UserSerializer,
@@ -48,7 +49,9 @@ from .serializers import (
     InvoiceSerializer,
     PurchaseNestedSerializer,
     TransactionSerializer,
-    ActivityLogSerializer
+    ActivityLogSerializer,
+    ProductAssociationSerializer,
+    RelatedProductSerializer
 )
 
 
@@ -66,18 +69,25 @@ def upload_image(request):
     
     # Validate file type
     allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
-    file_extension = Path(file_obj.name).suffix.lower()
+    file_name = file_obj.name.lower() if hasattr(file_obj, 'name') else None
     
-    if file_extension not in allowed_extensions:
+    if not file_name:
+        return Response({'error': 'Invalid file - no name provided'}, status=400)
+    
+    # Extract extension, handle multiple dots safely
+    file_extension = Path(file_name).suffix.lower()
+    
+    if not file_extension or file_extension not in allowed_extensions:
+        sorted_extensions = ', '.join(sorted(allowed_extensions))
         return Response({
-            'error': f'''Invalid file type. Allowed types: {', '.join(allowed_extensions)}'''
+            'error': f'Invalid file type. Allowed types: {sorted_extensions}'
         }, status=400)
     
     # Validate file size (max 5MB)
     max_size = 5 * 1024 * 1024  # 5MB in bytes
     if file_obj.size > max_size:
         return Response({
-            'error': f'File too large. Maximum size is 5MB'
+            'error': 'File too large. Maximum size is 5MB'
         }, status=400)
     
     try:
@@ -138,7 +148,7 @@ class InventoryViewSet(viewsets.ModelViewSet):
 class NewStockViewSet(viewsets.ModelViewSet):
     queryset = NewStock.objects.all()
     serializer_class = NewStockSerializer
-    permission_classes = [IsAuthenticated, IsManagerOrReadOnly] # Managers/Admins can add stock, Staff can view
+    permission_classes = [IsAuthenticated] # Any authenticated user can track stock additions
     
     @transaction.atomic 
     def perform_create(self, serializer):
@@ -154,8 +164,8 @@ class NewStockViewSet(viewsets.ModelViewSet):
         inventory_item.quantity += new_stock_quantity
         inventory_item.save(update_fields=['quantity', 'updatedAt'])
         
-        # Save the new stock record
-        serializer.save()
+        # Save the new stock record with current user
+        serializer.save(addedByUser=self.request.user)
 
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
@@ -526,3 +536,40 @@ class ActivityLogViewSet(viewsets.ModelViewSet):
     queryset = ActivityLog.objects.all()
     serializer_class = ActivityLogSerializer
     permission_classes = [IsAuthenticated, IsAdminOrManager] # Only Managers/Admins should view activity logs
+
+
+class ProductAssociationViewSet(viewsets.ModelViewSet):
+    queryset = ProductAssociation.objects.all().order_by('-associationPercentage', '-frequency')
+    serializer_class = ProductAssociationSerializer
+    permission_classes = [IsAuthenticated] # All authenticated users can view associations
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def by_product(self, request):
+        """
+        Get products that are associated with a specific product.
+        Query parameter: product_id (required)
+        Returns products bought together with the specified product, ordered by association percentage.
+        """
+        product_id = request.query_params.get('product_id')
+        
+        if not product_id:
+            return Response(
+                {'error': 'product_id query parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            product = Product.objects.get(productId=product_id)
+        except Product.DoesNotExist:
+            return Response(
+                {'error': f'Product with id {product_id} not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get all associations for this product
+        associations = ProductAssociation.objects.filter(
+            product1=product
+        ).order_by('-associationPercentage', '-frequency')
+        
+        serializer = RelatedProductSerializer(associations, many=True)
+        return Response(serializer.data)

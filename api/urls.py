@@ -17,6 +17,7 @@ router.register(r'invoices', views.InvoiceViewSet)
 router.register(r'purchases', views.PurchaseViewSet)
 router.register(r'transactions', views.TransactionViewSet)
 router.register(r'activitylogs', views.ActivityLogViewSet)
+router.register(r'product-associations', views.ProductAssociationViewSet)
 
 from .authentication import LoginView, RegisterView
 

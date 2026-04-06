@@ -14,7 +14,8 @@ from .models import (
     Invoice,
     Purchase,
     Transaction,
-    ActivityLog
+    ActivityLog,
+    ProductAssociation
 )
 
 class UserSerializer(serializers.ModelSerializer):
@@ -61,12 +62,18 @@ class SubCategorySerializer(serializers.ModelSerializer):
 class SourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Source
-        fields = ['sourceId', 'name', 'sourceUrl', 'contactPerson', 'phone', 'email', 'address', 'createdAt']
+        fields = ['sourceId', 'name', 'sourceUrl', 'contactPerson', 'phone', 'email', 'address', 'district', 'createdAt']
 
 class ProductSerializer(serializers.ModelSerializer):
+    subcategoryName = serializers.SerializerMethodField()
+    
     class Meta:
         model = Product
-        fields = ['productId', 'productName', 'description', 'image', 'skuCode', 'unit', 'costPrice', 'salePrice', 'discount', 'status', 'subcategory', 'source', 'createdAt']
+        fields = ['productId', 'productName', 'description', 'image', 'skuCode', 'unit', 'costPrice', 'salePrice', 'discount', 'status', 'subcategory', 'subcategoryName', 'source', 'createdAt']
+    
+    def get_subcategoryName(self, obj):
+        """Return the subcategory name"""
+        return obj.subcategory.name if obj.subcategory else None
     
     def to_representation(self, instance):
         """Hide costPrice from staff users"""
@@ -161,11 +168,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
         fields = [
-            'invoiceId', 'customer', 'customerName', 'customerPhone', 'createdByUser', 'createdByUsername',
+            'invoiceId', 'invoiceNumber', 'customer', 'customerName', 'customerPhone', 'createdByUser', 'createdByUsername',
             'paymentMethod', 'note', 'status', 'createdAt', 'paidAt',
             'lineItems', 'purchases', 'taxPercentage', 'totalBeforeDiscount', 'discount', 'tax', 'grandTotal'
         ]
-        read_only_fields = ['invoiceId', 'createdByUser', 'createdAt', 'paidAt']
+        read_only_fields = ['invoiceId', 'invoiceNumber', 'createdByUser', 'createdAt', 'paidAt']
 
     def create(self, validated_data):
         line_items_data = validated_data.pop('lineItems')
@@ -234,3 +241,51 @@ class ActivityLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = ActivityLog
         fields = ['logId', 'user', 'username', 'actionType', 'description', 'createdAt']
+
+
+class ProductAssociationSerializer(serializers.ModelSerializer):
+    product1Name = serializers.CharField(source='product1.productName', read_only=True)
+    product2Name = serializers.CharField(source='product2.productName', read_only=True)
+    product1Id = serializers.IntegerField(source='product1.productId', read_only=True)
+    product2Id = serializers.IntegerField(source='product2.productId', read_only=True)
+    product1Image = serializers.CharField(source='product1.image', read_only=True)
+    product2Image = serializers.CharField(source='product2.image', read_only=True)
+    
+    class Meta:
+        model = ProductAssociation
+        fields = [
+            'associationId',
+            'product1',
+            'product1Id',
+            'product1Name',
+            'product1Image',
+            'product2',
+            'product2Id',
+            'product2Name',
+            'product2Image',
+            'frequency',
+            'associationPercentage',
+            'totalProduct1Purchases',
+            'createdAt',
+            'updatedAt'
+        ]
+        read_only_fields = [
+            'associationId',
+            'frequency',
+            'associationPercentage',
+            'totalProduct1Purchases',
+            'createdAt',
+            'updatedAt'
+        ]
+
+
+class RelatedProductSerializer(serializers.Serializer):
+    """Serializer for related products endpoint - shows products bought with a specific product."""
+    productId = serializers.IntegerField(source='product2.productId')
+    productName = serializers.CharField(source='product2.productName')
+    description = serializers.CharField(source='product2.description')
+    image = serializers.CharField(source='product2.image')
+    skuCode = serializers.CharField(source='product2.skuCode')
+    salePrice = serializers.DecimalField(source='product2.salePrice', max_digits=10, decimal_places=2)
+    associationPercentage = serializers.DecimalField(max_digits=5, decimal_places=2)
+    frequency = serializers.IntegerField()

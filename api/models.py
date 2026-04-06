@@ -56,6 +56,7 @@ class Source(models.Model):
     phone = models.CharField(max_length=50, null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
     address = models.TextField(null=True, blank=True)
+    district = models.CharField(max_length=255, null=True, blank=True)  # District/Province
     createdAt = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -86,6 +87,12 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.productName} ({self.skuCode})"
+
+    def save(self, *args, **kwargs):
+        """Auto-set status to Discount if discount > 0"""
+        if self.discount and self.discount > 0:
+            self.status = 'Discount'
+        super().save(*args, **kwargs)
 
 
 class Inventory(models.Model):
@@ -148,6 +155,7 @@ INVOICE_STATUS_CHOICES = [
 
 class Invoice(models.Model):
     invoiceId = models.AutoField(primary_key=True)
+    invoiceNumber = models.CharField(max_length=20, unique=True, null=True, blank=True)  # Format: YYYY-NNN
     customer = models.ForeignKey('Customer', on_delete=models.SET_NULL, null=True, blank=True, related_name='invoices')
     customerName = models.CharField(max_length=255, default='Guest')  # Direct customer name input
     customerPhone = models.CharField(max_length=50, null=True, blank=True)  # Optional phone
@@ -173,7 +181,25 @@ class Invoice(models.Model):
     createdAt = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Invoice #{self.invoiceId} — {self.customerName} — {self.status}"
+        invoice_num = self.invoiceNumber or f"#{self.invoiceId}"
+        return f"Invoice {invoice_num} — {self.customerName} — {self.status}"
+
+    def save(self, *args, **kwargs):
+        """Generate invoice number if not already set"""
+        if not self.invoiceNumber:
+            from datetime import datetime
+            current_year = datetime.now().year
+            
+            # Count invoices created in current year
+            invoices_this_year = Invoice.objects.filter(
+                createdAt__year=current_year
+            ).count()
+            
+            # Generate format: INV-YYYY-NNN (e.g., INV-2025-001)
+            sequence_number = invoices_this_year + 1
+            self.invoiceNumber = f"INV-{current_year}-{sequence_number:03d}"
+        
+        super().save(*args, **kwargs)
 
 
 class Purchase(models.Model):
@@ -188,6 +214,23 @@ class Purchase(models.Model):
 
     def __str__(self):
         return f"{self.quantity} × {self.product.productName if self.product else 'Unknown'} → Invoice #{self.invoice.invoiceId}"
+    
+
+class ProductAssociation(models.Model):
+    associationId = models.AutoField(primary_key=True)
+    product1 = models.ForeignKey('Product', on_delete=models.CASCADE, related_name='associations_from')
+    product2 = models.ForeignKey('Product', on_delete=models.CASCADE, related_name='associations_to')
+    frequency = models.IntegerField(default=1)  # Number of times bought together
+    associationPercentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)  # Percentage of co-purchases relative to product1's total purchases
+    totalProduct1Purchases = models.IntegerField(default=0)  # Total times product1 was purchased (for percentage calculation)
+    createdAt = models.DateTimeField(auto_now_add=True)
+    updatedAt = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('product1', 'product2')  # Ensure only one association per pair
+
+    def __str__(self):
+        return f"{self.product1.productName} → {self.product2.productName} ({self.associationPercentage}%)"
     
 # Reusable enums for payment method and transaction status
 TRANSACTION_METHOD_CHOICES = [

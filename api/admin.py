@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     User, UserProfile, Category, SubCategory, Source, Product, Inventory, NewStock,
-    Customer, Invoice, Purchase, Transaction, ActivityLog
+    Customer, Invoice, Purchase, Transaction, ActivityLog, ProductAssociation
 )
 
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -128,3 +128,13 @@ class ActivityLogAdmin(admin.ModelAdmin):
     search_fields = ('description', 'user__username')
     date_hierarchy = 'createdAt'
     readonly_fields = ('createdAt',)
+
+# ------------------- ProductAssociation -------------------
+@admin.register(ProductAssociation)
+class ProductAssociationAdmin(admin.ModelAdmin):
+    list_display = ('product1', 'product2', 'frequency', 'associationPercentage', 'updatedAt')
+    list_filter = ('associationPercentage', 'updatedAt')
+    search_fields = ('product1__productName', 'product2__productName')
+    autocomplete_fields = ('product1', 'product2')
+    readonly_fields = ('frequency', 'associationPercentage', 'totalProduct1Purchases', 'createdAt', 'updatedAt')
+    date_hierarchy = 'updatedAt'
