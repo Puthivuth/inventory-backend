@@ -7,6 +7,9 @@ from .models import (
     Purchase, Inventory, Invoice, ActivityLog,
     Product, Category, SubCategory, Source, NewStock, Customer, User, ProductAssociation
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Store previous states for activity logging
 _model_previous_states = {}
@@ -316,3 +319,37 @@ def log_user_deletion(sender, instance, **kwargs):
         actionType='DELETE_USER',
         description=f"Deleted user: {instance.username}"
     )
+
+
+@receiver(post_save, sender=Product)
+def auto_index_product_image(sender, instance, created, **kwargs):
+    """
+    Automatically index product images to Qdrant vector database when:
+    1. A new product is created with an image
+    2. An existing product's image is updated
+    
+    This allows the product to be searchable via image similarity search.
+    """
+    try:
+        # Only process if product has an image
+        if not instance.image or instance.image.strip() == '':
+            logger.info(f"Skipping indexing for Product(id={instance.productId}): No image")
+            return
+        
+        from .image_search_service import index_product_image
+        
+        # Index the product image
+        logger.info(f"Auto-indexing product image: {instance.productName} (Product ID: {instance.productId})")
+        index_product_image(
+            product_id=instance.productId,
+            image_url=instance.image,
+            product_name=instance.productName,
+            sku_code=instance.skuCode
+        )
+        logger.info(f"✓ Successfully indexed: {instance.productName}")
+        
+    except Exception as e:
+        # Log the error but don't crash the product save operation
+        logger.error(f"✗ Failed to index product image for {instance.productName} (ID: {instance.productId}): {str(e)}")
+        # In production, you might want to send an alert or retry with Celery
+        # For now, we silently continue to avoid blocking product creation

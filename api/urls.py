@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
+from .image_search_views import search_products_by_image, search_products_by_url, index_product_images
 
 # router automatically create the url or api endpoint for all methods
 router = DefaultRouter()
@@ -26,4 +27,7 @@ urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
     path('', include(router.urls)),
     path('upload/', views.upload_image, name='upload_image'),
+    path('search-products/', search_products_by_image, name='search_products_by_image'),
+    path('search-products-url/', search_products_by_url, name='search_products_by_url'),
+    path('index-product-images/', index_product_images, name='index_product_images'),
 ]
