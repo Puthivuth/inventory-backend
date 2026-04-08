@@ -27,6 +27,8 @@ _client_instance = None
 _clip_model = None
 _clip_preprocess = None
 _device = None
+_is_auto_indexing = False  # Guard against recursive auto-indexing
+_skip_auto_index = False   # Used by management command to skip auto-indexing
 
 def _cleanup_client():
     """Properly close Qdrant client on shutdown"""
@@ -75,9 +77,13 @@ def _cleanup_lock_files():
     except:
         pass
 
-def initialize_qdrant():
-    """Initialize Qdrant client and create collection if needed"""
-    global _client_instance
+def initialize_qdrant(auto_index=True):
+    """Initialize Qdrant client and create collection if needed.
+    
+    Args:
+        auto_index: If True and collection is empty, auto-index products from database
+    """
+    global _client_instance, _is_auto_indexing, _skip_auto_index
     
     try:
         os.makedirs(QDRANT_PATH, exist_ok=True)
@@ -90,22 +96,66 @@ def initialize_qdrant():
             _client_instance = QdrantClient(path=QDRANT_PATH)
         
         try:
-            # Check if collection exists
-            _client_instance.get_collection(COLLECTION_NAME)
-        except Exception:
-            # Create collection if it doesn't exist
+            # Check if collection exists and how many points it has
+            collection_info = _client_instance.get_collection(COLLECTION_NAME)
+            points_count = collection_info.points_count if hasattr(collection_info, 'points_count') else 0
+            
+            # If collection is empty, auto-index (unless disabled)
+            if auto_index and not _skip_auto_index and points_count == 0 and not _is_auto_indexing:
+                print(f"INFO: Collection '{COLLECTION_NAME}' is empty. Auto-indexing products from database...")
+                _is_auto_indexing = True
+                try:
+                    _auto_index_products()
+                finally:
+                    _is_auto_indexing = False
+                    
+        except Exception as e:
+            # Collection doesn't exist, create it
+            if not _skip_auto_index:
+                print(f"Creating new collection: {str(e)}")
             from qdrant_client.models import VectorParams, Distance
             _client_instance.recreate_collection(
                 collection_name=COLLECTION_NAME,
                 vectors_config=VectorParams(
                     size=VECTOR_SIZE,
                     distance=Distance.COSINE
-                ),
+                )
             )
+            # Auto-index after creation if enabled and not already doing so
+            if auto_index and not _skip_auto_index and not _is_auto_indexing:
+                print(f"New collection created. Auto-indexing products from database...")
+                _is_auto_indexing = True
+                try:
+                    _auto_index_products()
+                finally:
+                    _is_auto_indexing = False
         
         return _client_instance
     except Exception as e:
         raise Exception(f"Failed to initialize Qdrant: {str(e)}")
+
+def _auto_index_products():
+    """Automatically index all products with images from the database"""
+    try:
+        from api.models import Product
+        
+        products = Product.objects.filter(image__isnull=False).exclude(image="")
+        count = 0
+        for product in products:
+            try:
+                if index_product_image(
+                    product.productId,
+                    product.image,
+                    product.productName,
+                    product.skuCode
+                ):
+                    count += 1
+            except Exception as e:
+                print(f"Failed to index {product.productName}: {str(e)}")
+        
+        print(f"Auto-indexed {count} products from database")
+    except Exception as e:
+        print(f"Error during auto-indexing: {str(e)}")
 
 def get_image_embedding(image_source):
     """
@@ -210,6 +260,34 @@ def index_product_image(product_id: int, image_url: str, product_name: str = "",
         print(f"Error indexing product image: {str(e)}")
         return False
 
+def _search_qdrant(client, query_vector, top_k, score_threshold):
+    """
+    Search in Qdrant collection.
+    
+    Args:
+        client: QdrantClient instance
+        query_vector: Query embedding as list
+        top_k: Number of results
+        score_threshold: Minimum similarity score
+    
+    Returns:
+        List of ScoredPoint objects with payload
+    """
+    try:
+        # Use the standard search method available in all Qdrant clients
+        results = client.search(
+            collection_name=COLLECTION_NAME,
+            query_vector=query_vector,
+            limit=top_k,
+            score_threshold=score_threshold,
+            with_payload=True,
+        )
+        return results if results else []
+        
+    except Exception as e:
+        print(f"Error searching Qdrant: {str(e)}")
+        return []
+
 def search_similar_images(
     image_source,
     top_k: int = 10,
@@ -229,49 +307,74 @@ def search_similar_images(
     try:
         client = initialize_qdrant()
         
+        # Debug: Check collection state
+        try:
+            collection_info = client.get_collection(COLLECTION_NAME)
+            print(f"DEBUG: Collection '{COLLECTION_NAME}' has {collection_info.points_count} points")
+        except Exception as e:
+            print(f"DEBUG: Error checking collection: {e}")
+        
         # Get query embedding
         query_embedding = get_image_embedding(image_source)
         
-        # Search in Qdrant using query_points
-        search_result = client.query_points(
-            collection_name=COLLECTION_NAME,
-            query=query_embedding.tolist(),
-            limit=top_k,
-            score_threshold=score_threshold,
-        )
+        # Search using adaptive method
+        search_points = _search_qdrant(client, query_embedding.tolist(), top_k, score_threshold)
+        print(f"DEBUG: Search returned {len(search_points) if search_points else 0} results")
         
         # Import Product model here to avoid circular imports
         from api.models import Product
         
         # Format results and enrich with product data
         results = []
-        for point in search_result.points:
+        
+        for point in search_points:
+            # Safely extract payload - it can be dict or None
+            if point.payload is None:
+                payload = {}
+            elif isinstance(point.payload, dict):
+                payload = point.payload
+            elif hasattr(point.payload, '__dict__'):
+                # Convert object to dict if needed
+                payload = point.payload.__dict__
+            else:
+                payload = {}
+            
+            # Safely extract score
+            score = point.score if hasattr(point, 'score') else 0
+            
             result_data = {
-                "product_id": point.payload.get("product_id"),
-                "product_name": point.payload.get("product_name"),
-                "sku_code": point.payload.get("sku_code"),
-                "image_url": point.payload.get("image_url"),
-                "similarity_score": point.score,
+                "product_id": payload.get("product_id") if isinstance(payload, dict) else None,
+                "product_name": payload.get("product_name") if isinstance(payload, dict) else None,
+                "sku_code": payload.get("sku_code") if isinstance(payload, dict) else None,
+                "image_url": payload.get("image_url") if isinstance(payload, dict) else None,
+                "similarity_score": score,
             }
             
             # Try to enrich with product data from database
             try:
-                product_id = point.payload.get("product_id")
-                product = Product.objects.get(productId=product_id)
-                result_data["sale_price"] = float(product.salePrice)
-                result_data["cost_price"] = float(product.costPrice)
+                product_id = payload.get("product_id") if isinstance(payload, dict) else None
+                if product_id:
+                    product = Product.objects.get(productId=product_id)
+                    result_data["sale_price"] = float(product.salePrice)
+                    result_data["cost_price"] = float(product.costPrice)
+                else:
+                    result_data["sale_price"] = 0.0
+                    result_data["cost_price"] = 0.0
             except Product.DoesNotExist:
                 # If product not in database, use default values
                 result_data["sale_price"] = 0.0
                 result_data["cost_price"] = 0.0
             except Exception as e:
                 # Log error but don't fail the search
-                print(f"Warning: Could not fetch product data for ID {point.payload.get('product_id')}: {e}")
+                product_id = payload.get("product_id") if isinstance(payload, dict) else None
+                if product_id:
+                    print(f"Warning: Could not fetch product data for ID {product_id}: {e}")
                 result_data["sale_price"] = 0.0
                 result_data["cost_price"] = 0.0
             
             results.append(result_data)
         
+        print(f"DEBUG: Returning {len(results)} formatted results")
         return results
     
     except Exception as e:

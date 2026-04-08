@@ -36,25 +36,33 @@ def search_products_by_image(request):
     - results: List of matching products with similarity scores
     """
     try:
+        logger.info(f"Search request from user: {request.user}")
+        
         # Get uploaded file
         image_file = request.FILES.get('file')
         if not image_file:
+            logger.error("No image file provided in request")
             return Response(
                 {'error': 'No image file provided'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Validate image format
+        logger.info(f"Received image file: {image_file.name}, size: {image_file.size} bytes")
+        
+        # Validate image format by trying to open it
+        image_file.seek(0)
         try:
-            image = Image.open(image_file)
-            image.verify()
+            img = Image.open(image_file)
+            img.load()  # Load to verify it's a valid image
+            logger.info(f"Image validated: {img.format} {img.size}")
         except Exception as e:
+            logger.error(f"Invalid image file: {str(e)}")
             return Response(
                 {'error': f'Invalid image file: {str(e)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Reset file pointer after verification
+        # Reset file pointer back to start for search
         image_file.seek(0)
         
         # Get search parameters
@@ -65,12 +73,16 @@ def search_products_by_image(request):
         top_k = max(1, min(top_k, 50))  # Limit to 1-50
         score_threshold = max(0.0, min(score_threshold, 1.0))
         
+        logger.info(f"Search parameters: top_k={top_k}, score_threshold={score_threshold}")
+        
         # Search for similar images
         results = search_similar_images(
             image_file,
             top_k=top_k,
             score_threshold=score_threshold
         )
+        
+        logger.info(f"Search returned {len(results)} results")
         
         return Response({
             'success': True,

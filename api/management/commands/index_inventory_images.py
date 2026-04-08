@@ -20,11 +20,15 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        # Tell the service to skip auto-indexing during management command
+        from api import image_search_service
+        image_search_service._skip_auto_index = True
+        
         try:
-            # Initialize Qdrant (will reset if --reset flag is set)
+            # Initialize Qdrant without auto-indexing (we'll handle indexing manually)
             if options.get("reset"):
                 from qdrant_client.models import Distance, VectorParams
-                client = initialize_qdrant()
+                client = initialize_qdrant(auto_index=False)
                 collection_name = "product_images"
                 
                 # Recreate collection
@@ -39,7 +43,7 @@ class Command(BaseCommand):
                 )
                 self.stdout.write(self.style.SUCCESS("✓ Cleared and recreated Qdrant collection"))
             else:
-                client = initialize_qdrant()
+                client = initialize_qdrant(auto_index=False)
                 self.stdout.write(self.style.SUCCESS("✓ Qdrant initialized"))
 
             # Get all products from inventory
@@ -99,3 +103,6 @@ class Command(BaseCommand):
             )
             import traceback
             traceback.print_exc()
+        finally:
+            # Reset the skip flag when done
+            image_search_service._skip_auto_index = False
