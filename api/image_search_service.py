@@ -54,15 +54,40 @@ def _get_clip_model():
     """Get CLIP model (lazy-initialized)"""
     global _clip_model, _clip_preprocess
     if _clip_model is None:
-        import clip
+        try:
+            import clip
+        except ImportError as e:
+            print(f"ERROR: Failed to import CLIP: {e}")
+            print("Make sure you have: pip install openai-clip torch torchvision")
+            raise
+        
         device = _get_device()
-        _clip_model, _clip_preprocess = clip.load("ViT-B/32", device=device)
+        try:
+            print(f"DEBUG: Loading CLIP model on {device}...")
+            _clip_model, _clip_preprocess = clip.load("ViT-B/32", device=device)
+            print(f"DEBUG: CLIP model loaded successfully")
+        except Exception as e:
+            print(f"ERROR: Failed to load CLIP model: {e}")
+            print(f"DEBUG: Error details: {type(e).__name__}: {str(e)}")
+            raise
     return _clip_model, _clip_preprocess
 
 def _cleanup_lock_files():
     """Remove lock files that might be blocking Qdrant"""
     try:
-        # Remove lock files
+        # Remove lock files more aggressively
+        import shutil
+        
+        # Check for .lock file in main qdrant path
+        lock_file = os.path.join(QDRANT_PATH, ".lock")
+        if os.path.exists(lock_file):
+            print(f"DEBUG: Removing lock file: {lock_file}")
+            try:
+                os.remove(lock_file)
+            except:
+                pass
+        
+        # Look for lock files in subdirectories
         lock_patterns = [
             os.path.join(QDRANT_PATH, "*.lock"),
             os.path.join(QDRANT_PATH, "**/*.lock"),
@@ -70,12 +95,33 @@ def _cleanup_lock_files():
         for pattern in lock_patterns:
             for lock_file in glob.glob(pattern, recursive=True):
                 try:
+                    print(f"DEBUG: Removing lock file: {lock_file}")
                     os.remove(lock_file)
-                except:
-                    pass
+                except Exception as e:
+                    print(f"DEBUG: Could not remove lock file {lock_file}: {e}")
+        
         time.sleep(0.5)  # Brief delay to ensure locks are released
-    except:
-        pass
+    except Exception as e:
+        print(f"DEBUG: Error cleaning up lock files: {e}")
+
+def _ensure_qdrant_ready():
+    """Ensure Qdrant storage is accessible and not locked"""
+    try:
+        # Remove any lock files
+        _cleanup_lock_files()
+        
+        # Verify directory exists
+        os.makedirs(QDRANT_PATH, exist_ok=True)
+        
+        # Check if collection files are intact
+        collection_dir = os.path.join(QDRANT_PATH, "collection")
+        if os.path.exists(collection_dir):
+            print(f"DEBUG: Collection directory found with {len(os.listdir(collection_dir)) if os.path.isdir(collection_dir) else 0} items")
+        
+        return True
+    except Exception as e:
+        print(f"ERROR: Failed to ensure Qdrant is ready: {e}")
+        return False
 
 def initialize_qdrant(auto_index=True):
     """Initialize Qdrant client and create collection if needed.
@@ -86,10 +132,8 @@ def initialize_qdrant(auto_index=True):
     global _client_instance, _is_auto_indexing, _skip_auto_index
     
     try:
-        os.makedirs(QDRANT_PATH, exist_ok=True)
-        
-        # Clean up any lock files
-        _cleanup_lock_files()
+        # Ensure Qdrant storage is ready and clean
+        _ensure_qdrant_ready()
         
         # Create or reuse client
         if _client_instance is None:
@@ -170,20 +214,33 @@ def get_image_embedding(image_source):
     try:
         # Handle different image sources
         if isinstance(image_source, str):
-            if image_source.startswith(('http://', 'https://')):
-                # Download from URL
-                response = requests.get(image_source, timeout=10)
-                image = Image.open(io.BytesIO(response.content))
-            elif image_source.startswith('/media/'):
+            # First check if it's a media path (from database)
+            if image_source.startswith('/media/'):
                 # Handle relative media paths - convert to absolute file path
-                media_path = os.path.join(settings.BASE_DIR, '..', 'backend', image_source.lstrip('/'))
+                media_path = os.path.join(settings.BASE_DIR, image_source.lstrip('/'))
                 if not os.path.exists(media_path):
                     # Try alternate path
-                    media_path = os.path.join(settings.BASE_DIR, image_source.lstrip('/'))
+                    media_path = os.path.join(settings.BASE_DIR, '..', 'backend', image_source.lstrip('/'))
                 if os.path.exists(media_path):
                     image = Image.open(media_path)
                 else:
                     raise FileNotFoundError(f"Media file not found: {media_path}")
+            elif image_source.startswith(('http://', 'https://')):
+                # Download from URL (only if it's a real HTTP URL, not localhost)
+                if 'localhost' in image_source or '127.0.0.1' in image_source:
+                    # Try to convert localhost URL to file path
+                    path = image_source.replace('http://localhost:8000', '').replace('http://127.0.0.1:8000', '')
+                    if path.startswith('/'):
+                        media_path = os.path.join(settings.BASE_DIR, path.lstrip('/'))
+                        if os.path.exists(media_path):
+                            image = Image.open(media_path)
+                        else:
+                            raise FileNotFoundError(f"Media file not found: {media_path}")
+                    else:
+                        raise FileNotFoundError(f"Could not convert localhost URL to file path: {image_source}")
+                else:
+                    response = requests.get(image_source, timeout=10)
+                    image = Image.open(io.BytesIO(response.content))
             else:
                 # Load from file path
                 if os.path.exists(image_source):
@@ -274,7 +331,8 @@ def _search_qdrant(client, query_vector, top_k, score_threshold):
         List of ScoredPoint objects with payload
     """
     try:
-        # Use the standard search method available in all Qdrant clients
+        # Use the correct search method for qdrant-client
+        # Handle both older and newer API versions
         results = client.search(
             collection_name=COLLECTION_NAME,
             query_vector=query_vector,
@@ -284,6 +342,22 @@ def _search_qdrant(client, query_vector, top_k, score_threshold):
         )
         return results if results else []
         
+    except AttributeError as e:
+        # Fallback for older versions - try alternative method
+        print(f"DEBUG: Standard search method not available, trying alternative approach: {str(e)}")
+        try:
+            # Some versions might use search_batch or similar
+            from qdrant_client.models import NamedVector
+            results = client.search(
+                collection_name=COLLECTION_NAME,
+                query_vector=query_vector,
+                limit=top_k,
+                with_payload=True,
+            )
+            return results if results else []
+        except Exception as e2:
+            print(f"Error searching Qdrant (both methods failed): {str(e2)}")
+            return []
     except Exception as e:
         print(f"Error searching Qdrant: {str(e)}")
         return []

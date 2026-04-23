@@ -14,8 +14,22 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        import json
+        print(f"DEBUG: Raw request body: {request.body}")
+        print(f"DEBUG: Request data type: {type(request.data)}")
+        print(f"DEBUG: Login request data: {request.data}")
+        print(f"DEBUG: Content-Type: {request.META.get('CONTENT_TYPE')}")
+        
         serializer = AuthTokenSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        is_valid = serializer.is_valid(raise_exception=False)
+        print(f"DEBUG: Serializer valid: {is_valid}")
+        if not is_valid:
+            print(f"DEBUG: Serializer errors: {serializer.errors}")
+            return Response({
+                "detail": str(serializer.errors),
+                "non_field_errors": serializer.errors.get("non_field_errors", [])
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         user = serializer.validated_data['user']
         token, created = Token.objects.get_or_create(user=user)
         

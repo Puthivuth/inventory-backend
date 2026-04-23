@@ -12,8 +12,13 @@ pillow==11.2.1
 reportlab==4.4.2
 django-grappelli==3.0.10
 bakong-khqr==0.1.0
-qdrant-client==1.17.1
+setuptools<70
+wheel>=0.40.0
+qdrant-client==1.8.0
 openai-clip==1.0.1
 torch==2.1.0
 torchvision==0.16.0
 numpy==1.24.3
+regex>=2023.0.0
+tqdm>=4.64.0
+ftfy>=6.1.1
