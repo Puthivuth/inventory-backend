@@ -1,7 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
-from .image_search_views import search_products_by_image, search_products_by_url, index_product_images
+from .image_search_views import (
+    search_products_by_image, 
+    search_products_by_url, 
+    index_product_images,
+    detect_objects_in_image
+)
 
 # router automatically create the url or api endpoint for all methods
 router = DefaultRouter()
@@ -30,4 +35,5 @@ urlpatterns = [
     path('search-products/', search_products_by_image, name='search_products_by_image'),
     path('search-products-url/', search_products_by_url, name='search_products_by_url'),
     path('index-product-images/', index_product_images, name='index_product_images'),
+    path('detect-objects/', detect_objects_in_image, name='detect_objects'),
 ]

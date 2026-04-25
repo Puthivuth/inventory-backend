@@ -16,6 +16,7 @@ import time
 import glob
 import atexit
 import sys
+from ultralytics import YOLO
 
 # Configuration
 QDRANT_PATH = os.path.join(settings.BASE_DIR, "qdrant_storage")
@@ -42,6 +43,33 @@ def _cleanup_client():
 
 # Register cleanup on exit
 atexit.register(_cleanup_client)
+
+def detect_objects(image_source):
+    """
+    Detect objects in an image using YOLO11 and return bounding boxes and labels.
+    """
+    # Load model (lazy loading would be better but keeping it simple for now)
+    model = YOLO('yolo11m.pt') 
+    
+    # We need a PIL image or path 
+    if isinstance(image_source, Image.Image):
+        img = image_source
+    else: 
+        # Re-use existing logic to get PIL image
+        img = get_image_embedding(image_source, return_image=True)
+    
+    results = model(img)
+    detections = []
+    
+    for r in results:
+        for box in r.boxes:
+            coords = box.xyxy[0].tolist() # [x1, y1, x2, y2]
+            detections.append({
+                "box": [int(c) for c in coords],
+                "label": r.names[int(box.cls[0])],
+                "confidence": float(box.conf[0])
+            })
+    return detections
 
 def _get_device():
     """Get the device for PyTorch (lazy-initialized)"""
@@ -201,15 +229,17 @@ def _auto_index_products():
     except Exception as e:
         print(f"Error during auto-indexing: {str(e)}")
 
-def get_image_embedding(image_source):
+def get_image_embedding(image_source, box=None, return_image=False):
     """
-    Generate embedding for an image
+    Generate embedding for an image or return the PIL image.
     
     Args:
         image_source: PIL Image, file path, or URL
+        box: Optional bounding box [x1, y1, x2, y2] to crop
+        return_image: If True, return PIL Image instead of embedding
     
     Returns:
-        numpy array of embedding
+        numpy array of embedding OR PIL Image
     """
     try:
         # Handle different image sources
@@ -259,6 +289,13 @@ def get_image_embedding(image_source):
         # Convert to RGB if necessary
         if image.mode != 'RGB':
             image = image.convert('RGB')
+
+        # Crop if box is provided
+        if box and len(box) == 4:
+            image = image.crop((box[0], box[1], box[2], box[3]))
+        
+        if return_image:
+            return image
         
         # Get lazy-loaded CLIP model
         model, preprocess = _get_clip_model()
@@ -275,7 +312,7 @@ def get_image_embedding(image_source):
         return embedding[0].cpu().numpy().astype(np.float32)
     
     except Exception as e:
-        print(f"Error generating embedding: {str(e)}")
+        print(f"Error generating embedding/image: {str(e)}")
         raise
 
 def index_product_image(product_id: int, image_url: str, product_name: str = "", sku_code: str = ""):
@@ -365,15 +402,18 @@ def _search_qdrant(client, query_vector, top_k, score_threshold):
 def search_similar_images(
     image_source,
     top_k: int = 10,
-    score_threshold: float = 0.5
+    score_threshold: float = 0.5,
+    box: list = None
 ) -> List[Dict[str, Any]]:
     """
-    Search for similar products based on image
+    Search for similar products based on image (optionally cropped by box)
     
     Args:
         image_source: Image to search by
         top_k: Number of top results to return
         score_threshold: Minimum similarity score (0-1)
+        box: Optional bounding box [x1, y1, x2, y2]. If None, YOLO will try 
+             to find the best object automatically.
     
     Returns:
         List of matching products with similarity scores
@@ -388,8 +428,20 @@ def search_similar_images(
         except Exception as e:
             print(f"DEBUG: Error checking collection: {e}")
         
-        # Get query embedding
-        query_embedding = get_image_embedding(image_source)
+        # If no box provided, try to detect objects automatically
+        if box is None:
+            try:
+                detections = detect_objects(image_source)
+                if detections:
+                    # Sort by confidence and take the best one
+                    detections.sort(key=lambda x: x['confidence'], reverse=True)
+                    box = detections[0]['box']
+                    print(f"DEBUG: No box provided, automatically using best detection: {detections[0]['label']} ({detections[0]['confidence']:.2f})")
+            except Exception as e:
+                print(f"DEBUG: Auto-detection failed, using full image: {e}")
+        
+        # Get query embedding (with optional crop)
+        query_embedding = get_image_embedding(image_source, box=box)
         
         # Search using adaptive method
         search_points = _search_qdrant(client, query_embedding.tolist(), top_k, score_threshold)
@@ -431,13 +483,16 @@ def search_similar_images(
                     product = Product.objects.get(productId=product_id)
                     result_data["sale_price"] = float(product.salePrice)
                     result_data["cost_price"] = float(product.costPrice)
+                    result_data["description"] = product.description
                 else:
                     result_data["sale_price"] = 0.0
                     result_data["cost_price"] = 0.0
+                    result_data["description"] = ""
             except Product.DoesNotExist:
                 # If product not in database, use default values
                 result_data["sale_price"] = 0.0
                 result_data["cost_price"] = 0.0
+                result_data["description"] = ""
             except Exception as e:
                 # Log error but don't fail the search
                 product_id = payload.get("product_id") if isinstance(payload, dict) else None
@@ -445,6 +500,7 @@ def search_similar_images(
                     print(f"Warning: Could not fetch product data for ID {product_id}: {e}")
                 result_data["sale_price"] = 0.0
                 result_data["cost_price"] = 0.0
+                result_data["description"] = ""
             
             results.append(result_data)
         
