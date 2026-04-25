@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 import io
+import json
 from PIL import Image
 from django.views.decorators.csrf import csrf_exempt
 import logging
@@ -14,9 +15,39 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
-    from .image_search_service import search_similar_images, index_product_image
+    from .image_search_service import search_similar_images, index_product_image, detect_objects
 except ImportError:
     logger.warning("Image search service not available")
+
+@api_view(['POST'])
+@parser_classes((MultiPartParser, FormParser))
+@permission_classes([IsAuthenticated])
+def detect_objects_in_image(request):
+    """
+    Detect objects in an uploaded image and return their bounding boxes.
+    
+    POST /api/detect-objects/
+    """
+    try:
+        image_file = request.FILES.get('file')
+        if not image_file:
+            return Response(
+                {'error': 'No image file provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        detections = detect_objects(image_file)
+        
+        return Response({
+            'success': True,
+            'detections': detections
+        })
+    except Exception as e:
+        logger.error(f"Error detecting objects: {str(e)}")
+        return Response(
+            {'error': f'Detection failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 @api_view(['POST'])
 @parser_classes((MultiPartParser, FormParser))
@@ -31,6 +62,7 @@ def search_products_by_image(request):
     - file: Image file (multipart/form-data)
     - top_k: Number of results (optional, default: 10)
     - score_threshold: Minimum similarity score (optional, default: 0.5)
+    - box: JSON string of bounding box [x1, y1, x2, y2] (optional)
     
     Returns:
     - results: List of matching products with similarity scores
@@ -46,6 +78,19 @@ def search_products_by_image(request):
                 {'error': 'No image file provided'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Get box parameter if provided
+        box_data = request.data.get('box')
+        box = None
+        if box_data:
+            try:
+                if isinstance(box_data, str):
+                    box = json.loads(box_data)
+                else:
+                    box = box_data
+                logger.info(f"Searching for object in box: {box}")
+            except Exception as e:
+                logger.warning(f"Could not parse box data: {e}")
         
         logger.info(f"Received image file: {image_file.name}, size: {image_file.size} bytes")
         
@@ -75,11 +120,12 @@ def search_products_by_image(request):
         
         logger.info(f"Search parameters: top_k={top_k}, score_threshold={score_threshold}")
         
-        # Search for similar images
+        # Search for similar images (with optional box cropping)
         results = search_similar_images(
             image_file,
             top_k=top_k,
-            score_threshold=score_threshold
+            score_threshold=score_threshold,
+            box=box
         )
         
         logger.info(f"Search returned {len(results)} results")
@@ -90,7 +136,8 @@ def search_products_by_image(request):
             'count': len(results),
             'parameters': {
                 'top_k': top_k,
-                'score_threshold': score_threshold
+                'score_threshold': score_threshold,
+                'has_box': box is not None
             }
         })
     
