@@ -79,3 +79,5 @@ venv.bak/
 # OS specific
 .DS_Store
 Thumbs.db
+
+yolo11x.pt

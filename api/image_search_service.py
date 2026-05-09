@@ -5,6 +5,7 @@ import os
 import io
 import numpy as np
 from PIL import Image
+import pillow_avif  # Register AVIF support
 import torch
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
