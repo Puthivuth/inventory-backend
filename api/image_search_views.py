@@ -9,7 +9,10 @@ from rest_framework.permissions import IsAuthenticated
 import io
 import json
 from PIL import Image
-import pillow_avif  # Register AVIF support
+try:
+    import pillow_avif  # Register AVIF support
+except ImportError:
+    pass  # pillow_avif is optional
 from django.views.decorators.csrf import csrf_exempt
 import logging
 
