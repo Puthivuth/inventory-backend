@@ -5,7 +5,10 @@ import os
 import io
 import numpy as np
 from PIL import Image
-import pillow_avif  # Register AVIF support
+try:
+    import pillow_avif  # Register AVIF support
+except ImportError:
+    pass  # pillow_avif is optional
 import torch
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
@@ -17,7 +20,14 @@ import time
 import glob
 import atexit
 import sys
-from ultralytics import YOLO
+try:
+    from ultralytics import YOLO
+except ImportError:
+    try:
+        from ultralytics.yolo.engine.results import Results
+        from ultralytics.models import YOLO
+    except ImportError:
+        YOLO = None
 
 # Configuration
 QDRANT_PATH = os.path.join(settings.BASE_DIR, "qdrant_storage")
@@ -49,6 +59,9 @@ def detect_objects(image_source):
     """
     Detect objects in an image using YOLO11 and return bounding boxes and labels.
     """
+    if YOLO is None:
+        raise ImportError("ultralytics YOLO is not available. Install with: pip install ultralytics")
+    
     # Load model (lazy loading would be better but keeping it simple for now)
     model = YOLO('yolo11m.pt') 
     
