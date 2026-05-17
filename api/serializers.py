@@ -65,15 +65,49 @@ class SourceSerializer(serializers.ModelSerializer):
         fields = ['sourceId', 'name', 'sourceUrl', 'contactPerson', 'phone', 'email', 'address', 'district', 'createdAt']
 
 class ProductSerializer(serializers.ModelSerializer):
+    # Allow both reading nested objects and writing via IDs
+    subcategory = serializers.PrimaryKeyRelatedField(
+        queryset=SubCategory.objects.all(),
+        write_only=False  # Allow writing by ID
+    )
+    source = serializers.PrimaryKeyRelatedField(
+        queryset=Source.objects.all(),
+        allow_null=True,
+        required=False,
+        write_only=False  # Allow writing by ID
+    )
+    # Include nested representation for reads
+    subcategoryDetails = SubCategorySerializer(source='subcategory', read_only=True)
+    sourceDetails = SourceSerializer(source='source', read_only=True)
     subcategoryName = serializers.SerializerMethodField()
+    sourceName = serializers.SerializerMethodField()
+    inventory_records = serializers.SerializerMethodField()
     
     class Meta:
         model = Product
-        fields = ['productId', 'productName', 'description', 'image', 'skuCode', 'unit', 'costPrice', 'salePrice', 'discount', 'status', 'subcategory', 'subcategoryName', 'source', 'createdAt']
+        fields = ['productId', 'productName', 'description', 'image', 'skuCode', 'unit', 'costPrice', 'salePrice', 'discount', 'status', 'subcategory', 'subcategoryDetails', 'subcategoryName', 'source', 'sourceDetails', 'sourceName', 'inventory_records', 'createdAt']
     
     def get_subcategoryName(self, obj):
         """Return the subcategory name"""
         return obj.subcategory.name if obj.subcategory else None
+    
+    def get_sourceName(self, obj):
+        """Return the source name"""
+        return obj.source.name if obj.source else None
+    
+    def get_inventory_records(self, obj):
+        """Return inventory records for this product"""
+        inventory_records = obj.inventory_records.all()
+        return [
+            {
+                'inventoryId': inv.inventoryId,
+                'quantity': inv.quantity,
+                'reorderLevel': inv.reorderLevel,
+                'location': inv.location,
+                'updatedAt': inv.updatedAt,
+            }
+            for inv in inventory_records
+        ]
     
     def to_representation(self, instance):
         """Hide costPrice from staff users"""
@@ -88,9 +122,25 @@ class ProductSerializer(serializers.ModelSerializer):
         return representation
 
 class InventorySerializer(serializers.ModelSerializer):
+    # Make product read-only since it shouldn't be changed after creation
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.all(),
+        required=False
+    )
+    
     class Meta:
         model = Inventory
         fields = ['inventoryId', 'product', 'quantity', 'reorderLevel', 'location', 'updatedAt']
+    
+    def get_fields(self):
+        """Make fields optional for updates to support partial updates"""
+        fields = super().get_fields()
+        if self.instance is not None:  # This is an update operation
+            fields['product'].read_only = True
+            # Make all fields optional for updates
+            for field_name in ['quantity', 'reorderLevel', 'location', 'product']:
+                fields[field_name].required = False
+        return fields
 
 class NewStockSerializer(serializers.ModelSerializer):
     productName = serializers.SerializerMethodField()
