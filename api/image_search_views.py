@@ -8,15 +8,16 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 import io
 import json
-from PIL import Image
-try:
-    import pillow_avif  # Register AVIF support
-except ImportError:
-    pass  # pillow_avif is optional
-from django.views.decorators.csrf import csrf_exempt
 import logging
+from PIL import Image
+from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
+
+try:
+    import pillow_avif  # Register AVIF support (optional)
+except ImportError:
+    pass  # pillow_avif not installed; AVIF support is disabled
 
 try:
     from .image_search_service import search_similar_images, index_product_image, detect_objects

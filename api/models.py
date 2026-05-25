@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, IntegrityError, transaction
 
 from django.contrib.auth.models import AbstractUser
 
@@ -184,22 +184,44 @@ class Invoice(models.Model):
         invoice_num = self.invoiceNumber or f"#{self.invoiceId}"
         return f"Invoice {invoice_num} — {self.customerName} — {self.status}"
 
+    @classmethod
+    def _generate_invoice_number(cls):
+        from django.utils import timezone
+
+        current_year = timezone.now().year
+        prefix = f"INV-{current_year}-"
+
+        latest_invoice_number = (
+            cls.objects.filter(invoiceNumber__startswith=prefix)
+            .order_by('-invoiceNumber')
+            .values_list('invoiceNumber', flat=True)
+            .first()
+        )
+
+        if latest_invoice_number:
+            try:
+                next_sequence = int(latest_invoice_number.rsplit('-', 1)[-1]) + 1
+            except (IndexError, ValueError):
+                next_sequence = cls.objects.filter(invoiceNumber__startswith=prefix).count() + 1
+        else:
+            next_sequence = 1
+
+        return f"{prefix}{next_sequence:03d}"
+
     def save(self, *args, **kwargs):
         """Generate invoice number if not already set"""
-        if not self.invoiceNumber:
-            from datetime import datetime
-            current_year = datetime.now().year
-            
-            # Count invoices created in current year
-            invoices_this_year = Invoice.objects.filter(
-                createdAt__year=current_year
-            ).count()
-            
-            # Generate format: INV-YYYY-NNN (e.g., INV-2025-001)
-            sequence_number = invoices_this_year + 1
-            self.invoiceNumber = f"INV-{current_year}-{sequence_number:03d}"
-        
-        super().save(*args, **kwargs)
+        if self.invoiceNumber:
+            return super().save(*args, **kwargs)
+
+        for attempt in range(3):
+            self.invoiceNumber = self._generate_invoice_number()
+            try:
+                with transaction.atomic():
+                    return super().save(*args, **kwargs)
+            except IntegrityError:
+                if attempt == 2:
+                    raise
+                self.invoiceNumber = None
 
 
 class Purchase(models.Model):

@@ -17,12 +17,10 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'vuthserver.tailf87741.ts.net', '100.
 
 # CORS settings for development
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
     "http://localhost:3001",
-    "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
-    "http://100.94.77.119:3000",
-    "http://192.168.1.223:3000",
+    "http://100.94.77.119:3001",
+    "http://192.168.1.223:3001",
     "https://ochlocratical-braelynn-nonrefractively.ngrok-free.dev",
     "https://vuthserver.tailf87741.ts.net"
 ]
