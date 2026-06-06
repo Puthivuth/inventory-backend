@@ -131,22 +131,45 @@ class SubCategoryViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsManagerOrReadOnly] # Admins/Managers can manage, Staff can view
 
 class SourceViewSet(viewsets.ModelViewSet):
-    queryset = Source.objects.all()
+    queryset = Source.objects.all().prefetch_related('products__subcategory')
     serializer_class = SourceSerializer
     permission_classes = [IsAuthenticated, IsManagerOrReadOnly] # Admins/Managers can manage, Staff can view
 
 class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.all()
+    queryset = Product.objects.all().select_related(
+        'subcategory',
+        'source'
+    ).prefetch_related(
+        'inventory_records'
+    )
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated, IsManagerOrReadOnly] # Managers/Admins can create/edit, Staff can view
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        source_id = self.request.query_params.get('source')
+        if source_id:
+            queryset = queryset.filter(source_id=source_id)
+        return queryset
+
 class InventoryViewSet(viewsets.ModelViewSet):
-    queryset = Inventory.objects.all()
+    queryset = Inventory.objects.all().select_related(
+        'product',
+        'product__subcategory',
+        'product__subcategory__category',
+        'product__source'
+    ).prefetch_related(
+        'product__purchases'
+    )
     serializer_class = InventorySerializer
     permission_classes = [IsAuthenticated, IsManagerOrReadOnly] # Managers/Admins can adjust, Staff can view
 
 class NewStockViewSet(viewsets.ModelViewSet):
-    queryset = NewStock.objects.all()
+    queryset = NewStock.objects.all().select_related(
+        'inventory__product',
+        'supplier',
+        'addedByUser'
+    )
     serializer_class = NewStockSerializer
     permission_classes = [IsAuthenticated] # Any authenticated user can track stock additions
     
@@ -168,7 +191,10 @@ class NewStockViewSet(viewsets.ModelViewSet):
         serializer.save(addedByUser=self.request.user)
 
 class CustomerViewSet(viewsets.ModelViewSet):
-    queryset = Customer.objects.all()
+    from django.db.models import Min
+    queryset = Customer.objects.annotate(
+        earliest_invoice_date=Min('invoices__createdAt')
+    )
     serializer_class = CustomerSerializer
     permission_classes = [IsAuthenticated, IsManagerOrReadOnly] # Managers/Admins can manage customers, Staff can view
     
@@ -181,7 +207,10 @@ class CustomerViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
 class InvoiceViewSet(viewsets.ModelViewSet):
-    queryset = Invoice.objects.all()
+    queryset = Invoice.objects.all().select_related('createdByUser').prefetch_related(
+        'purchases',
+        'purchases__product'
+    )
     serializer_class = InvoiceSerializer
     permission_classes = [IsAuthenticated, IsManagerOrReadOnly] # Managers/Admins can create/manage invoices, Staff can view
     

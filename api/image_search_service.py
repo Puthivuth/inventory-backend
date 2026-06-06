@@ -32,7 +32,7 @@ except ImportError:
 # Configuration
 QDRANT_PATH = os.path.join(settings.BASE_DIR, "qdrant_storage")
 COLLECTION_NAME = "product_images"
-VECTOR_SIZE = 512  # CLIP embedding size
+VECTOR_SIZE = 768  # CLIP embedding size (ViT-L/14@336px)
 
 # Global instances (lazy-initialized)
 _client_instance = None
@@ -62,8 +62,9 @@ def detect_objects(image_source):
     if YOLO is None:
         raise ImportError("ultralytics YOLO is not available. Install with: pip install ultralytics")
     
-    # Load model (lazy loading would be better but keeping it simple for now)
-    model = YOLO('yolo11m.pt') 
+    # Load model from settings instead of hardcoding
+    model_name = getattr(settings, 'IMAGE_SEARCH_YOLO_MODEL', 'yolo11m.pt')
+    model = YOLO(model_name)
     
     # We need a PIL image or path 
     if isinstance(image_source, Image.Image):
@@ -106,7 +107,7 @@ def _get_clip_model():
         device = _get_device()
         try:
             print(f"DEBUG: Loading CLIP model on {device}...")
-            _clip_model, _clip_preprocess = clip.load("ViT-B/32", device=device)
+            _clip_model, _clip_preprocess = clip.load("ViT-L/14@336px", device=device)
             print(f"DEBUG: CLIP model loaded successfully")
         except Exception as e:
             print(f"ERROR: Failed to load CLIP model: {e}")

@@ -113,7 +113,7 @@ class Command(BaseCommand):
             try:
                 from qdrant_client.models import Distance, VectorParams
                 COLLECTION_NAME = "product_images"
-                VECTOR_SIZE = 512
+                VECTOR_SIZE = 768
                 
                 client.recreate_collection(
                     collection_name=COLLECTION_NAME,

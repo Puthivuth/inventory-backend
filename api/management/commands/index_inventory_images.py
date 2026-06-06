@@ -39,7 +39,7 @@ class Command(BaseCommand):
                 
                 client.recreate_collection(
                     collection_name=collection_name,
-                    vectors_config=VectorParams(size=512, distance=Distance.COSINE),
+                    vectors_config=VectorParams(size=768, distance=Distance.COSINE),
                 )
                 self.stdout.write(self.style.SUCCESS("✓ Cleared and recreated Qdrant collection"))
             else:

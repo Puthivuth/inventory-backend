@@ -60,9 +60,19 @@ class SubCategorySerializer(serializers.ModelSerializer):
         fields = ['subcategoryId', 'category', 'name', 'createdAt']
 
 class SourceSerializer(serializers.ModelSerializer):
+    subcategories = serializers.SerializerMethodField()
+    
     class Meta:
         model = Source
-        fields = ['sourceId', 'name', 'sourceUrl', 'contactPerson', 'phone', 'email', 'address', 'district', 'createdAt']
+        fields = ['sourceId', 'name', 'sourceUrl', 'contactPerson', 'phone', 'email', 'address', 'district', 'subcategories', 'createdAt']
+
+    def get_subcategories(self, obj):
+        # We prefetch 'products__subcategory', so we can use python to get subcategories from cache without extra queries!
+        subcat_names = set()
+        for p in obj.products.all():
+            if p.subcategory:
+                subcat_names.add(p.subcategory.name)
+        return sorted(list(subcat_names))
 
 class ProductSerializer(serializers.ModelSerializer):
     # Allow both reading nested objects and writing via IDs
@@ -142,6 +152,59 @@ class InventorySerializer(serializers.ModelSerializer):
                 fields[field_name].required = False
         return fields
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        product = instance.product
+        if product:
+            representation['productName'] = product.productName
+            representation['description'] = product.description
+            representation['skuCode'] = product.skuCode
+            representation['unit'] = product.unit
+            representation['status'] = product.status
+            representation['image'] = product.image
+            representation['createdAt'] = product.createdAt.isoformat() if product.createdAt else None
+            
+            # Subcategory & Category
+            subcategory = product.subcategory
+            if subcategory:
+                representation['subcategoryName'] = subcategory.name
+                representation['subcategoryId'] = subcategory.subcategoryId
+                category = subcategory.category
+                if category:
+                    representation['categoryName'] = category.name
+                    representation['categoryId'] = category.categoryId
+            else:
+                representation['subcategoryName'] = None
+                representation['subcategoryId'] = None
+                representation['categoryName'] = None
+                representation['categoryId'] = None
+            
+            # Source (Supplier)
+            source = product.source
+            if source:
+                representation['sourceName'] = source.name
+                representation['sourceId'] = source.sourceId
+            else:
+                representation['sourceName'] = None
+                representation['sourceId'] = None
+
+            # Prices & Discounts
+            representation['salePrice'] = str(product.salePrice)
+            representation['discount'] = str(product.discount)
+            
+            # Hide cost price from staff users
+            request = self.context.get('request')
+            if request and hasattr(request, 'user') and request.user.is_authenticated and request.user.role == 'staff':
+                pass
+            else:
+                representation['costPrice'] = str(product.costPrice)
+                
+            # Sold quantity (from prefetched purchases)
+            sold_sum = sum(p.quantity for p in product.purchases.all())
+            representation['sold'] = sold_sum
+            
+        return representation
+
 class NewStockSerializer(serializers.ModelSerializer):
     productName = serializers.SerializerMethodField()
     productSku = serializers.SerializerMethodField()
@@ -175,8 +238,10 @@ class CustomerSerializer(serializers.ModelSerializer):
         """Override to automatically populate firstPurchaseDate from earliest invoice"""
         representation = super().to_representation(instance)
         
-        # If firstPurchaseDate is not set, query the earliest invoice date
-        if not representation.get('firstPurchaseDate'):
+        # Use annotated database value if available to avoid N+1 query loops
+        if hasattr(instance, 'earliest_invoice_date') and instance.earliest_invoice_date:
+            representation['firstPurchaseDate'] = instance.earliest_invoice_date
+        elif not representation.get('firstPurchaseDate'):
             earliest_invoice = instance.invoices.aggregate(
                 earliest_date=Min('createdAt')
             )

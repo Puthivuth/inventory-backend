@@ -117,7 +117,7 @@ def search_products_by_image(request):
         
         # Get search parameters
         top_k = int(request.data.get('top_k', 10))
-        score_threshold = float(request.data.get('score_threshold', 0.3))  # Lowered from 0.5
+        score_threshold = float(request.data.get('score_threshold', 0.5))
         
         # Validate parameters
         top_k = max(1, min(top_k, 50))  # Limit to 1-50
