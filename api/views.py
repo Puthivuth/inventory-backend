@@ -196,11 +196,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 profile = getattr(invoice.createdByUser, 'profile', None)
                 merchant_label = getattr(profile, 'businessName', '') or khqr_service.merchant_name
                 phone_number = invoice.customerPhone or getattr(profile, 'businessPhone', '') or ''
-                amount_khr = float(invoice.grandTotal) * 4000
                 qr_data = khqr_service.generate_qr_code(
                     invoice_id=invoice.invoiceId,
-                    amount=amount_khr,
-                    currency='KHR',
+                    amount=invoice.grandTotal,
+                    currency='USD',
                     store_label=merchant_label,
                     phone_number=phone_number,
                 )
@@ -267,9 +266,6 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             
             logger.info(f"Generating NEW KHQR for invoice #{invoice.invoiceId}, amount: {invoice.grandTotal}")
             
-            # Convert USD to KHR if needed (1 USD ≈ 4000 KHR)
-            # Bakong typically uses KHR currency
-            amount_khr = float(invoice.grandTotal) * 4000
             profile = getattr(invoice.createdByUser, 'profile', None)
             khqr_service = KHQRService()
             merchant_label = getattr(profile, 'businessName', '') or khqr_service.merchant_name
@@ -277,8 +273,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             
             qr_data = khqr_service.generate_qr_code(
                 invoice_id=invoice.invoiceId,
-                amount=amount_khr,
-                currency='KHR',
+                amount=invoice.grandTotal,
+                currency='USD',
                 store_label=merchant_label,
                 phone_number=phone_number,
             )

@@ -220,9 +220,13 @@ class InvoiceSerializer(serializers.ModelSerializer):
         fields = [
             'invoiceId', 'invoiceNumber', 'customer', 'customerName', 'customerPhone', 'createdByUser', 'createdByUsername',
             'paymentMethod', 'note', 'status', 'createdAt', 'paidAt',
-            'lineItems', 'purchases', 'taxPercentage', 'totalBeforeDiscount', 'discount', 'tax', 'grandTotal'
+            'lineItems', 'purchases', 'taxPercentage', 'totalBeforeDiscount', 'discount', 'tax', 'grandTotal',
+            'khqrCodeString', 'khqrMd5', 'khqrTransactionHash', 'khqrShortHash', 'khqrDeeplink', 'khqrLastCheckedAt', 'khqrPaymentData'
         ]
-        read_only_fields = ['invoiceId', 'invoiceNumber', 'createdByUser', 'createdAt', 'paidAt']
+        read_only_fields = [
+            'invoiceId', 'invoiceNumber', 'createdByUser', 'createdAt', 'paidAt',
+            'khqrCodeString', 'khqrMd5', 'khqrTransactionHash', 'khqrShortHash', 'khqrDeeplink', 'khqrLastCheckedAt', 'khqrPaymentData'
+        ]
 
     def create(self, validated_data):
         line_items_data = validated_data.pop('lineItems')
