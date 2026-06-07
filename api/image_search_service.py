@@ -4,7 +4,7 @@ Image Search Service using CLIP and Qdrant Vector Database
 import os
 import io
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 try:
     import pillow_avif  # Register AVIF support
 except ImportError:
@@ -39,6 +39,7 @@ _client_instance = None
 _clip_model = None
 _clip_preprocess = None
 _device = None
+_yolo_model = None           # Cached YOLO model instance
 _is_auto_indexing = False  # Guard against recursive auto-indexing
 _skip_auto_index = False   # Used by management command to skip auto-indexing
 
@@ -55,16 +56,26 @@ def _cleanup_client():
 # Register cleanup on exit
 atexit.register(_cleanup_client)
 
+def _get_yolo_model():
+    """Get YOLO model (lazy-initialized and cached globally)"""
+    global _yolo_model
+    if _yolo_model is None:
+        if YOLO is None:
+            raise ImportError("ultralytics YOLO is not available. Install with: pip install ultralytics")
+        model_name = getattr(settings, 'IMAGE_SEARCH_YOLO_MODEL', 'yolo11m.pt')
+        print(f"DEBUG: Loading YOLO model: {model_name}")
+        _yolo_model = YOLO(model_name)
+        print(f"DEBUG: YOLO model loaded and cached")
+    return _yolo_model
+
+
 def detect_objects(image_source):
     """
     Detect objects in an image using YOLO11 and return bounding boxes and labels.
+    Uses a globally cached YOLO model to avoid reloading on every request.
     """
-    if YOLO is None:
-        raise ImportError("ultralytics YOLO is not available. Install with: pip install ultralytics")
-    
-    # Load model from settings instead of hardcoding
-    model_name = getattr(settings, 'IMAGE_SEARCH_YOLO_MODEL', 'yolo11m.pt')
-    model = YOLO(model_name)
+    # Use the cached model instance
+    model = _get_yolo_model()
     
     # We need a PIL image or path 
     if isinstance(image_source, Image.Image):
@@ -259,35 +270,43 @@ def get_image_embedding(image_source, box=None, return_image=False):
     try:
         # Handle different image sources
         if isinstance(image_source, str):
-            # First check if it's a media path (from database)
-            if image_source.startswith('/media/'):
-                # Handle relative media paths - convert to absolute file path
-                media_path = os.path.join(settings.BASE_DIR, image_source.lstrip('/'))
-                if not os.path.exists(media_path):
-                    # Try alternate path
-                    media_path = os.path.join(settings.BASE_DIR, '..', 'backend', image_source.lstrip('/'))
-                if os.path.exists(media_path):
+            # Robust media URL → file path conversion:
+            # Handles /media/ relative paths AND any localhost/127.0.0.1 URL containing /media/
+            media_url_prefix = getattr(settings, 'MEDIA_URL', '/media/')
+            media_root = str(getattr(settings, 'MEDIA_ROOT', os.path.join(settings.BASE_DIR, 'media')))
+
+            def _url_to_media_path(url_or_path):
+                """Convert a URL or relative path containing /media/ to an absolute file path."""
+                # Strip scheme and host for localhost URLs
+                for prefix in ('http://', 'https://'):
+                    if url_or_path.startswith(prefix):
+                        # Remove scheme + host (e.g. http://localhost:8000 or http://127.0.0.1:PORT)
+                        rest = url_or_path[len(prefix):]  # e.g. localhost:8000/media/products/file.jpg
+                        slash_idx = rest.find('/')
+                        if slash_idx != -1:
+                            url_or_path = rest[slash_idx:]  # e.g. /media/products/file.jpg
+                        break
+                # Now url_or_path is a path like /media/products/file.jpg
+                if url_or_path.startswith(media_url_prefix):
+                    relative = url_or_path[len(media_url_prefix):]  # e.g. products/file.jpg
+                    return os.path.join(media_root, relative)
+                return None
+
+            if image_source.startswith('/media/') or (
+                ('localhost' in image_source or '127.0.0.1' in image_source)
+                and '/media/' in image_source
+            ):
+                media_path = _url_to_media_path(image_source)
+                if media_path and os.path.exists(media_path):
                     image = Image.open(media_path)
                 else:
-                    raise FileNotFoundError(f"Media file not found: {media_path}")
+                    raise FileNotFoundError(f"Media file not found: {media_path} (from {image_source})")
             elif image_source.startswith(('http://', 'https://')):
-                # Download from URL (only if it's a real HTTP URL, not localhost)
-                if 'localhost' in image_source or '127.0.0.1' in image_source:
-                    # Try to convert localhost URL to file path
-                    path = image_source.replace('http://localhost:8000', '').replace('http://127.0.0.1:8000', '')
-                    if path.startswith('/'):
-                        media_path = os.path.join(settings.BASE_DIR, path.lstrip('/'))
-                        if os.path.exists(media_path):
-                            image = Image.open(media_path)
-                        else:
-                            raise FileNotFoundError(f"Media file not found: {media_path}")
-                    else:
-                        raise FileNotFoundError(f"Could not convert localhost URL to file path: {image_source}")
-                else:
-                    response = requests.get(image_source, timeout=10)
-                    image = Image.open(io.BytesIO(response.content))
+                # External URL — download it
+                response = requests.get(image_source, timeout=10)
+                image = Image.open(io.BytesIO(response.content))
             else:
-                # Load from file path
+                # Load from absolute/relative file path
                 if os.path.exists(image_source):
                     image = Image.open(image_source)
                 else:
@@ -300,7 +319,13 @@ def get_image_embedding(image_source, box=None, return_image=False):
             image = image_source
         else:
             raise ValueError("Invalid image source type")
-        
+
+        # Fix EXIF orientation (mobile photos often have rotation metadata)
+        try:
+            image = ImageOps.exif_transpose(image)
+        except Exception:
+            pass  # Not all images have EXIF data; ignore failures
+
         # Convert to RGB if necessary
         if image.mode != 'RGB':
             image = image.convert('RGB')
@@ -444,6 +469,7 @@ def search_similar_images(
             print(f"DEBUG: Error checking collection: {e}")
         
         # If no box provided, try to detect objects automatically
+        original_box = box  # Remember if box was user-supplied
         if box is None:
             try:
                 detections = detect_objects(image_source)
@@ -460,7 +486,22 @@ def search_similar_images(
         
         # Search using adaptive method
         search_points = _search_qdrant(client, query_embedding.tolist(), top_k, score_threshold)
-        print(f"DEBUG: Search returned {len(search_points) if search_points else 0} results")
+        print(f"DEBUG: Search returned {len(search_points) if search_points else 0} results (with box={box})")
+
+        # Fallback: if a crop was used but results are weak, try full-image search
+        FALLBACK_THRESHOLD = 0.68
+        if box is not None and (
+            not search_points or
+            (search_points and search_points[0].score < FALLBACK_THRESHOLD)
+        ):
+            print(f"DEBUG: Crop search weak (top score={search_points[0].score:.3f} < {FALLBACK_THRESHOLD}), falling back to full-image search")
+            full_embedding = get_image_embedding(image_source, box=None)
+            full_points = _search_qdrant(client, full_embedding.tolist(), top_k, score_threshold)
+            if full_points and (
+                not search_points or full_points[0].score > search_points[0].score
+            ):
+                print(f"DEBUG: Full-image fallback is stronger ({full_points[0].score:.3f} vs {search_points[0].score if search_points else 0:.3f}), using full-image results")
+                search_points = full_points
         
         # Import Product model here to avoid circular imports
         from api.models import Product
