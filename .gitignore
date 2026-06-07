@@ -82,3 +82,7 @@ Thumbs.db
 
 # Search Index
 qdrant_storage/
+
+
+# Yolo
+*.pt
