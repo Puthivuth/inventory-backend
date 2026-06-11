@@ -55,7 +55,7 @@
     pyparsing==3.3.2
     python-dateutil==2.9.0.post0
     python-dotenv==1.1.0
-    pywin32==311
+    pywin32==311; sys_platform == "win32"
     PyYAML==6.0.3
     qrcode==8.0
     qdrant-client==1.8.0
