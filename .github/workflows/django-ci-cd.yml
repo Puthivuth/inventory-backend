@@ -95,15 +95,15 @@ jobs:
           docker build -t ${{ secrets.DOCKER_USERNAME }}/django-inventory:latest .
           docker push ${{ secrets.DOCKER_USERNAME }}/django-inventory:latest
       # ---------------- git tag ----------------
-      - name: Create Git tag
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/}
+      # - name: Create Git tag
+      #   run: |
+      #     VERSION=${GITHUB_REF#refs/tags/}
 
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
+      #     git config user.name "github-actions"
+      #     git config user.email "actions@github.com"
 
-          git tag $VERSION
-          git push origin $VERSION
+      #     git tag $VERSION
+      #     git push origin $VERSION
   deploy:
     runs-on: self-hosted
     needs: docker_build
