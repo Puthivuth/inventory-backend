@@ -3,7 +3,7 @@ name: Django CI/CD with Docker
 on:
   push:
     branches:
-      # - master
+      - master
       # - stage
       - production
     tags:
@@ -11,7 +11,7 @@ on:
 
   pull_request:
     branches:
-      # - master
+      - master
       # - stage
       - production
 
