@@ -62,9 +62,26 @@ WSGI_APPLICATION = 'core.wsgi.application'
 
 # Database configuration from environment variables
 # Using dj-database-url to parse DATABASE_URL or fallback to individual env vars
-DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://mengheang:LInnBh7Kie3EL3gzIaQVkMX0q23Ha77R@dpg-d82s3ov2gups7398ai4g-a.singapore-postgres.render.com/inventory_database_6u51')
+# DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://mengheang:LInnBh7Kie3EL3gzIaQVkMX0q23Ha77R@dpg-d82s3ov2gups7398ai4g-a.singapore-postgres.render.com/inventory_database_6u51')
+# DATABASES = {
+#     'default': dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
+# }
+
+DB_NAME = os.environ.get("DB_NAME")
+DB_USER = os.environ.get("DB_USER")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_PORT = os.environ.get("DB_PORT", "5432")
+
 DATABASES = {
-    'default': dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": DB_NAME,
+        "USER": DB_USER,
+        "PASSWORD": DB_PASSWORD,
+        "HOST": DB_HOST,
+        "PORT": DB_PORT,
+    }
 }
 
 AUTH_USER_MODEL = 'api.User'
