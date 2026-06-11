@@ -12,7 +12,8 @@ import dj_database_url
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Load environment variables from .env file
-load_dotenv(BASE_DIR / '.env')
+if BASE_DIR.joinpath(".env").exists():
+    load_dotenv(BASE_DIR / ".env")
 
 # Application definition
 INSTALLED_APPS = [
@@ -129,16 +130,13 @@ REST_FRAMEWORK = {
 
 # CORS Configuration - Allow Flutter web app to access API
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:3000',
-    'http://localhost:5000',
-    'http://localhost:8080',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:5000',
-    'http://127.0.0.1:8080',
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
 ]
 
 # Allow all origins for development (comment out for production)
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
 
 # KHQR Payment Configuration
 KHQR_BASE_URL = os.environ.get('KHQR_BASE_URL', 'https://api-bakong.nbc.gov.kh')

@@ -116,7 +116,19 @@ jobs:
           docker stop inventory || true
           docker rm inventory || true
 
+          # 1. run initialization FIRST
+          docker run --rm \
+            --env-file /home/vuth/inventory/.env \
+            -v /home/vuth/inventory/media:/app/media \
+            -v /home/vuth/inventory/qdrant_storage:/app/qdrant_storage \
+            ${{ secrets.DOCKER_USERNAME }}/django-inventory:latest \
+            python manage.py initialize_image_search
+
+          # 2. then start server
           docker run -d \
             --name inventory \
             -p 8000:8000 \
+            --env-file /home/vuth/inventory/.env \
+            -v /home/vuth/inventory/media:/app/media \
+            -v /home/vuth/inventory/qdrant_storage:/app/qdrant_storage \
             ${{ secrets.DOCKER_USERNAME }}/django-inventory:latest
