@@ -133,10 +133,20 @@ def _get_clip_model():
         device = _get_device()
         model_name = getattr(settings, 'IMAGE_SEARCH_EMBEDDING_MODEL', 'clip-ViT-B-32')
         
-        # Clean model name for clip.load
-        clip_name = model_name.replace('clip-', '').replace('-', '/')
-        if '336px' in clip_name and '@' not in clip_name:
-            clip_name = clip_name.replace('336px', '@336px')
+        # Clean model name for clip.load (openai-clip uses specific names)
+        # clip-ViT-B-32 -> ViT-B/32
+        # clip-ViT-L-14 -> ViT-L/14
+        # clip-ViT-L-14-336px -> ViT-L/14@336px
+        clip_name = model_name.replace('clip-', '')
+        if clip_name == "ViT-B-32":
+            clip_name = "ViT-B/32"
+        elif clip_name == "ViT-L-14":
+            clip_name = "ViT-L/14"
+        elif clip_name == "ViT-L-14-336px":
+            clip_name = "ViT-L/14@336px"
+        else:
+            # Fallback transform
+            clip_name = clip_name.replace('-', '/')
 
         try:
             print(f"DEBUG: Loading CLIP model {clip_name} on {device}...")
@@ -617,11 +627,6 @@ def get_collection_info():
             "collection_name": COLLECTION_NAME,
             "vector_size": VECTOR_SIZE,
             "points_count": info.points_count,
-        }
-    except Exception as e:
-        print(f"Error getting collection info: {str(e)}")
-        return None
-.points_count,
         }
     except Exception as e:
         print(f"Error getting collection info: {str(e)}")
