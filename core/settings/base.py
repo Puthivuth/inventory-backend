@@ -151,7 +151,8 @@ KHQR_APP_DEEPLINK_CALLBACK = os.environ.get('KHQR_APP_DEEPLINK_CALLBACK', '')
 
 # Image Search Configuration (Integrated in Backend)
 IMAGE_SEARCH_QDRANT_PATH = os.environ.get('IMAGE_SEARCH_QDRANT_PATH', BASE_DIR / 'qdrant_storage')
-IMAGE_SEARCH_COLLECTION_NAME = os.environ.get('IMAGE_SEARCH_COLLECTION_NAME', 'inventory_products')
-IMAGE_SEARCH_YOLO_MODEL = os.environ.get('IMAGE_SEARCH_YOLO_MODEL', 'yolo26l.pt')
-IMAGE_SEARCH_EMBEDDING_MODEL = os.environ.get('IMAGE_SEARCH_EMBEDDING_MODEL', 'clip-ViT-L-14-336px')
+IMAGE_SEARCH_COLLECTION_NAME = os.environ.get('IMAGE_SEARCH_COLLECTION_NAME', 'product_images')
+IMAGE_SEARCH_YOLO_MODEL = os.environ.get('IMAGE_SEARCH_YOLO_MODEL', 'yolo11n.pt') # Use nano model for production
+IMAGE_SEARCH_EMBEDDING_MODEL = os.environ.get('IMAGE_SEARCH_EMBEDDING_MODEL', 'clip-ViT-B-32') # Use base model
 IMAGE_SEARCH_DETECTION_CONFIDENCE = float(os.environ.get('IMAGE_SEARCH_DETECTION_CONFIDENCE', '0.25'))
+IMAGE_SEARCH_FORCE_CPU = os.environ.get('IMAGE_SEARCH_FORCE_CPU', 'True') == 'True'

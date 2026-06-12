@@ -71,31 +71,44 @@ def _get_yolo_model():
 
 def detect_objects(image_source):
     """
-    Detect objects in an image using YOLO11 and return bounding boxes and labels.
+    Detect objects in an image using YOLO and return bounding boxes and labels.
     Uses a globally cached YOLO model to avoid reloading on every request.
     """
-    # Use the cached model instance
-    model = _get_yolo_model()
-    
-    # We need a PIL image or path 
-    if isinstance(image_source, Image.Image):
-        img = image_source
-    else: 
-        # Re-use existing logic to get PIL image
-        img = get_image_embedding(image_source, return_image=True)
-    
-    results = model(img)
-    detections = []
-    
-    for r in results:
-        for box in r.boxes:
-            coords = box.xyxy[0].tolist() # [x1, y1, x2, y2]
-            detections.append({
-                "box": [int(c) for c in coords],
-                "label": r.names[int(box.cls[0])],
-                "confidence": float(box.conf[0])
-            })
-    return detections
+    try:
+        # Check if YOLO is even imported
+        if YOLO is None:
+            print("WARNING: YOLO not available (ultralytics not installed or import failed)")
+            return []
+
+        # Get the model (might raise ImportError if not available)
+        try:
+            model = _get_yolo_model()
+        except Exception as e:
+            print(f"WARNING: Could not load YOLO model: {e}")
+            return []
+        
+        # We need a PIL image or path 
+        if isinstance(image_source, Image.Image):
+            img = image_source
+        else: 
+            # Re-use existing logic to get PIL image
+            img = get_image_embedding(image_source, return_image=True)
+        
+        results = model(img)
+        detections = []
+        
+        for r in results:
+            for box in r.boxes:
+                coords = box.xyxy[0].tolist() # [x1, y1, x2, y2]
+                detections.append({
+                    "box": [int(c) for c in coords],
+                    "label": r.names[int(box.cls[0])],
+                    "confidence": float(box.conf[0])
+                })
+        return detections
+    except Exception as e:
+        print(f"ERROR: Object detection failed: {e}")
+        return []
 
 def _get_device():
     """Get the device for PyTorch (lazy-initialized)"""
@@ -112,18 +125,27 @@ def _get_clip_model():
             import clip
         except ImportError as e:
             print(f"ERROR: Failed to import CLIP: {e}")
-            print("Make sure you have: pip install openai-clip torch torchvision")
             raise
         
         device = _get_device()
+        model_name = getattr(settings, 'IMAGE_SEARCH_EMBEDDING_MODEL', 'clip-ViT-B-32')
+        
+        # Clean model name for clip.load
+        clip_name = model_name.replace('clip-', '').replace('-', '/')
+        if '336px' in clip_name and '@' not in clip_name:
+            clip_name = clip_name.replace('336px', '@336px')
+
         try:
-            print(f"DEBUG: Loading CLIP model on {device}...")
-            _clip_model, _clip_preprocess = clip.load("ViT-L/14@336px", device=device)
+            print(f"DEBUG: Loading CLIP model {clip_name} on {device}...")
+            _clip_model, _clip_preprocess = clip.load(clip_name, device=device)
             print(f"DEBUG: CLIP model loaded successfully")
         except Exception as e:
-            print(f"ERROR: Failed to load CLIP model: {e}")
-            print(f"DEBUG: Error details: {type(e).__name__}: {str(e)}")
-            raise
+            print(f"ERROR: Failed to load CLIP model {clip_name}: {e}")
+            if clip_name != "ViT-B/32":
+                print("DEBUG: Falling back to ViT-B/32...")
+                _clip_model, _clip_preprocess = clip.load("ViT-B/32", device=device)
+            else:
+                raise
     return _clip_model, _clip_preprocess
 
 def _cleanup_lock_files():
@@ -186,17 +208,34 @@ def initialize_qdrant(auto_index=True):
     global _client_instance, _is_auto_indexing, _skip_auto_index
     
     try:
-        # Ensure Qdrant storage is ready and clean
-        _ensure_qdrant_ready()
-        
         # Create or reuse client
         if _client_instance is None:
-            _client_instance = QdrantClient(path=QDRANT_PATH)
+            qdrant_url = getattr(settings, 'IMAGE_SEARCH_QDRANT_URL', None)
+            qdrant_api_key = getattr(settings, 'IMAGE_SEARCH_QDRANT_API_KEY', None)
+            
+            if qdrant_url:
+                print(f"DEBUG: Connecting to remote Qdrant at {qdrant_url}")
+                _client_instance = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+            else:
+                # Ensure Qdrant storage is ready and clean for local mode
+                _ensure_qdrant_ready()
+                _client_instance = QdrantClient(path=str(QDRANT_PATH))
         
         try:
-            # Check if collection exists and how many points it has
+            # Check if collection exists
             collection_info = _client_instance.get_collection(COLLECTION_NAME)
-            points_count = collection_info.points_count if hasattr(collection_info, 'points_count') else 0
+            
+            # Check if vector size matches current model
+            existing_size = collection_info.config.params.vectors.size
+            if existing_size != VECTOR_SIZE:
+                print(f"WARNING: Vector size mismatch (existing: {existing_size}, current: {VECTOR_SIZE}). Recreating collection...")
+                _client_instance.recreate_collection(
+                    collection_name=COLLECTION_NAME,
+                    vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE)
+                )
+                points_count = 0
+            else:
+                points_count = collection_info.points_count if hasattr(collection_info, 'points_count') else 0
             
             # If collection is empty, auto-index (unless disabled)
             if auto_index and not _skip_auto_index and points_count == 0 and not _is_auto_indexing:
@@ -208,10 +247,9 @@ def initialize_qdrant(auto_index=True):
                     _is_auto_indexing = False
                     
         except Exception as e:
-            # Collection doesn't exist, create it
+            # Collection doesn't exist or other error, create it
             if not _skip_auto_index:
                 print(f"Creating new collection: {str(e)}")
-            from qdrant_client.models import VectorParams, Distance
             _client_instance.recreate_collection(
                 collection_name=COLLECTION_NAME,
                 vectors_config=VectorParams(
@@ -219,7 +257,7 @@ def initialize_qdrant(auto_index=True):
                     distance=Distance.COSINE
                 )
             )
-            # Auto-index after creation if enabled and not already doing so
+            # Auto-index after creation if enabled
             if auto_index and not _skip_auto_index and not _is_auto_indexing:
                 print(f"New collection created. Auto-indexing products from database...")
                 _is_auto_indexing = True
