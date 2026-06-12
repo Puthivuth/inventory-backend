@@ -30,9 +30,12 @@ except ImportError:
         YOLO = None
 
 # Configuration
-QDRANT_PATH = os.path.join(settings.BASE_DIR, "qdrant_storage")
-COLLECTION_NAME = "product_images"
-VECTOR_SIZE = 768  # CLIP embedding size (ViT-L/14@336px)
+QDRANT_PATH = getattr(settings, 'IMAGE_SEARCH_QDRANT_PATH', os.path.join(settings.BASE_DIR, "qdrant_storage"))
+COLLECTION_NAME = getattr(settings, 'IMAGE_SEARCH_COLLECTION_NAME', "product_images")
+
+# Determine vector size based on model
+_model_name = getattr(settings, 'IMAGE_SEARCH_EMBEDDING_MODEL', 'clip-ViT-B-32')
+VECTOR_SIZE = 512 if 'ViT-B-32' in _model_name else 768
 
 # Global instances (lazy-initialized)
 _client_instance = None
@@ -614,6 +617,11 @@ def get_collection_info():
             "collection_name": COLLECTION_NAME,
             "vector_size": VECTOR_SIZE,
             "points_count": info.points_count,
+        }
+    except Exception as e:
+        print(f"Error getting collection info: {str(e)}")
+        return None
+.points_count,
         }
     except Exception as e:
         print(f"Error getting collection info: {str(e)}")

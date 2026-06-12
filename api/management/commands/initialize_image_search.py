@@ -49,7 +49,7 @@ def index_local_images():
         from api.image_search_service import index_product_image
         
         if not os.path.exists(IMAGES_DIR):
-            logger.error(f"✗ Images directory not found: {IMAGES_DIR}")
+            logger.warning(f"⚠ Local images directory not found: {IMAGES_DIR}. Skipping local indexing.")
             return
         
         logger.info(f"Indexing images from: {IMAGES_DIR}")
