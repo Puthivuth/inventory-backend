@@ -161,9 +161,20 @@ def index_product_database_images():
         
         for product in products_with_images:
             try:
+                # Prioritize local path for indexing if it exists
+                image_source = None
+                try:
+                    if hasattr(product.image, 'path') and os.path.exists(product.image.path):
+                        image_source = product.image.path
+                except Exception:
+                    pass
+                
+                if not image_source:
+                    image_source = product.image.url if hasattr(product.image, 'url') else str(product.image)
+
                 success = index_product_image(
                     product_id=int(product.productId),
-                    image_url=product.image.url if hasattr(product.image, 'url') else str(product.image),
+                    image_url=image_source,
                     product_name=product.productName,
                     sku_code=product.skuCode
                 )

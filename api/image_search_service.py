@@ -339,8 +339,8 @@ def get_image_embedding(image_source, box=None, return_image=False):
                 possible_roots = [
                     media_root,
                     os.path.join(settings.BASE_DIR, 'media'),
-                    os.path.join(settings.BASE_DIR, 'media', 'media'), # Handle common double-media nesting
                     '/app/media',
+                    'media', # Relative to CWD
                 ]
                 
                 # Relative path inside media
@@ -352,42 +352,58 @@ def get_image_embedding(image_source, box=None, return_image=False):
                 
                 # Clean relative path
                 rel_path = rel_path.lstrip('/')
+                filename = os.path.basename(rel_path)
                 
                 # Check all combinations
+                checked_paths = []
                 for root in possible_roots:
-                    # Try direct relative path
+                    # 1. Try direct relative path (most common: media/products/file.jpg)
                     p1 = os.path.join(root, rel_path)
+                    checked_paths.append(p1)
                     if os.path.exists(p1): return p1
                     
-                    # Try assuming the path already includes 'products/' or similar
-                    p2 = os.path.join(root, path.lstrip('/'))
+                    # 2. Try just the filename in the root (fallback)
+                    p2 = os.path.join(root, filename)
+                    checked_paths.append(p2)
                     if os.path.exists(p2): return p2
+
+                    # 3. Try common subfolders (products/, inventory/)
+                    for sub in ['products', 'inventory']:
+                        p3 = os.path.join(root, sub, filename)
+                        checked_paths.append(p3)
+                        if os.path.exists(p3): return p3
                 
-                return None
+                return checked_paths
 
             # 1. Try resolving to a local file path (fastest)
-            resolved_path = _url_to_media_path(image_source)
-            if resolved_path:
-                image = Image.open(resolved_path)
+            resolved_result = _url_to_media_path(image_source)
+            if isinstance(resolved_result, str):
+                image = Image.open(resolved_result)
             # 2. Try as an external URL
             elif image_source.startswith(('http://', 'https://')):
                 try:
-                    # If it's a loopback/localhost URL and we couldn't find the file locally, 
-                    # downloading will likely fail too, but we try as a last resort.
-                    response = requests.get(image_source, timeout=5)
-                    image = Image.open(io.BytesIO(response.content))
+                    response = requests.get(image_source, timeout=10)
+                    if response.status_code == 200:
+                        image = Image.open(io.BytesIO(response.content))
+                    else:
+                        raise Exception(f"HTTP {response.status_code}")
                 except Exception as e:
-                    raise FileNotFoundError(f"Could not find local file and URL download failed: {image_source}")
+                    debug_paths = "\n".join([f"  - {p}" for p in resolved_result]) if isinstance(resolved_result, list) else "None"
+                    # Check if the folder itself exists to help the user
+                    media_exists = os.path.exists('/app/media')
+                    raise FileNotFoundError(
+                        f"Image not found. Checked local paths and URL download failed.\n"
+                        f"URL: {image_source}\n"
+                        f"Download Error: {e}\n"
+                        f"Internal /app/media folder exists: {media_exists}\n"
+                        f"Checked paths:\n{debug_paths}"
+                    )
             # 3. Try as a direct filesystem path
             elif os.path.exists(image_source):
                 image = Image.open(image_source)
             else:
-                # 4. Final attempt: combine with media root blindly
-                final_try = os.path.join(media_root, image_source.lstrip('/'))
-                if os.path.exists(final_try):
-                    image = Image.open(final_try)
-                else:
-                    raise FileNotFoundError(f"Image not found after checking local paths and URLs: {image_source}")
+                debug_paths = "\n".join([f"  - {p}" for p in resolved_result]) if isinstance(resolved_result, list) else "None"
+                raise FileNotFoundError(f"Image not found: {image_source}\nChecked paths:\n{debug_paths}")
         elif isinstance(image_source, UploadedFile):
             # Handle Django uploaded file
             image = Image.open(image_source)
